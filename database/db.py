@@ -122,6 +122,21 @@ def update_user_profile(**kwargs: Any) -> None:
         conn.execute(f"UPDATE user_profile SET {sets}", values)
 
 
+def reset_job_data() -> None:
+    """
+    Delete all discovered jobs and application rows while preserving user_profile.
+
+    This is a destructive reset intended for starting a fresh discovery run.
+    """
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM applications")
+        conn.execute("DELETE FROM jobs")
+        conn.execute(
+            "DELETE FROM sqlite_sequence WHERE name IN ('applications', 'jobs')"
+        )
+
+
 def _ensure_column(
     conn: sqlite3.Connection,
     table_name: str,

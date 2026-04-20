@@ -134,6 +134,15 @@ citizenship, prior applications, prior employment, relocation preference, and
 non-compete restrictions, unless you have stored an explicit answer in the
 profile defaults.
 
+Every LLM-produced form answer is post-validated before fill:
+
+- custom answers must match `custom_question_answers`
+- profile answers must match both the explicit stored value and the right profile field label
+- generated open-text answers must match stored generated materials and only fill fit/motivation-style prompts
+
+If the answer cannot be traced back to one of those sources, it is rejected and
+the form remains blocked instead of autofilling a guessed response.
+
 Profile data is stored in SQLite under `user_profile`, and the dashboard reads/writes it through [database/db.py](database/db.py).
 
 ## Logs and Data
@@ -144,6 +153,15 @@ Local runtime state is stored in:
 - `logs/`: local scheduler and dashboard process logs
 
 These directories are intentionally ignored by git.
+
+To wipe discovered jobs and applications while keeping the profile:
+
+```powershell
+@'
+from database.db import reset_job_data
+reset_job_data()
+'@ | python -
+```
 
 ## Known Limits
 

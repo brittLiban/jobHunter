@@ -39,9 +39,16 @@ Greater Seattle Area, WA
 Built full stack web applications, backend APIs, and cloud-hosted data systems for small business clients using React, Node.js, Express, MySQL, and MongoDB with CI/CD automation.
 Write and review code, maintain test coverage, troubleshoot production issues, and document solutions across continuous end-to-end software ownership.
 
-Sales Development Representative  Dec 2021 - Jan 2023
+Sales Development Representative  2022 - 2024
 Amazon Pay | Seattle, WA
 Supported a $200M+ monthly book of business at Amazon. Developed professional communication skills and familiarity with enterprise software tools and cross-functional team workflows.
+
+EDUCATION
+Green River College
+Bachelor's Degree, Software Development
+
+Western Governors University
+Bachelor's Degree, Supply Chain Management
 
 PROJECTS
 Hawva.io - Clinical Intelligence Platform  2025 - Present

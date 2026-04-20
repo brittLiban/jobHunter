@@ -135,6 +135,10 @@ filling, but only in a constrained way:
 - it can reuse generated fit text for short open-text motivation questions
 - it records resolver attempts in the apply payload for debugging
 - it does not guess facts that are not already stored
+- every accepted LLM answer is post-validated against stored profile values,
+  `custom_question_answers`, or generated materials before autofill
+- stored profile answers must match the relevant field label, not just the same raw value
+- generated materials are only allowed into open-text fit/motivation prompts
 
 Questions that must be explicitly stored in profile defaults or
 `custom_question_answers` include:
@@ -149,6 +153,21 @@ Questions that must be explicitly stored in profile defaults or
 - company-familiarity questions
 
 This keeps the system autonomous without turning it into a hallucinating form bot.
+
+## Reset Job Data
+
+To delete all current jobs and applications and start fresh while preserving
+the stored profile:
+
+```powershell
+@'
+from database.db import reset_job_data
+reset_job_data()
+'@ | python -
+```
+
+After a reset, restart `scheduler.py` or run `python main.py` once to repopulate
+the database from discovery.
 
 ## Logs
 
