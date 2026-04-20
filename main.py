@@ -2,7 +2,7 @@
 main.py - Job Hunter pipeline entry point.
 
 Pipeline order:
-1. Scrape all companies listed in config.COMPANY_SLUGS
+1. Discover jobs from configured ATS APIs and company sites
 2. Deduplicate and insert new jobs into the database
 3. For each unscored job: extract metadata -> apply filters -> score
 4. For jobs scoring 80+: run tailoring calls
@@ -28,7 +28,7 @@ from llm.client import configure_ollama
 from llm.extractor import ExtractedJob, extract_job_data
 from llm.scorer import score_job
 from llm.tailor import generate_answers, tailor_resume
-from scraper.greenhouse import GreenhouseScraper
+from scraper.discovery import scrape_all_jobs
 from submitter.service import auto_apply_job
 from tracker.tracker import (
     log_apply_dry_run,
@@ -53,19 +53,8 @@ ResultKind = Literal["scored", "priority", "filtered", "failed"]
 
 
 async def scrape_all() -> list[dict]:
-    """Fetch jobs from all configured companies concurrently."""
-    scraper = GreenhouseScraper()
-    tasks = [scraper.fetch_jobs(slug) for slug in config.COMPANY_SLUGS]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    all_jobs: list[dict] = []
-    for slug, result in zip(config.COMPANY_SLUGS, results):
-        if isinstance(result, Exception):
-            logger.error("[Scraper] %s failed: %s", slug, result)
-            continue
-        all_jobs.extend(result)
-
-    return all_jobs
+    """Fetch jobs from all configured discovery sources."""
+    return await scrape_all_jobs()
 
 
 def _has_excluded_title_keyword(title: str, excluded_keywords: list[str]) -> bool:
@@ -347,7 +336,15 @@ async def main() -> None:
         ", ".join(excluded_title_keywords) if excluded_title_keywords else "none",
     )
 
-    logger.info("[Scraper] Fetching jobs from %d company slug(s)...", len(config.COMPANY_SLUGS))
+    logger.info(
+        "[Scraper] Starting discovery across ATS APIs and company sites "
+        "(Greenhouse=%d, Ashby=%d, Lever=%d, Workable=%d, Company sites=%d)",
+        len(config.GREENHOUSE_BOARD_NAMES),
+        len(config.ASHBY_BOARD_NAMES),
+        len(config.LEVER_SITE_NAMES),
+        len(config.WORKABLE_COMPANY_NAMES),
+        len(config.COMPANY_SITE_TARGETS) if config.COMPANY_SITE_DISCOVERY_ENABLED else 0,
+    )
     all_jobs = await scrape_all()
     logger.info("[Scraper] Total jobs fetched: %d", len(all_jobs))
 

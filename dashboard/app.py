@@ -18,6 +18,7 @@ import config
 from database.db import (
     get_all_jobs_with_applications,
     get_distinct_companies,
+    get_distinct_sources,
     get_stats,
     get_user_profile,
     init_db,
@@ -106,6 +107,7 @@ def load_jobs(
     status_filter: str,
     score_range: tuple[int, int],
     company_filter: str,
+    source_filter: str,
     search: str,
 ) -> list[dict]:
     rows = get_all_jobs_with_applications()
@@ -126,6 +128,9 @@ def load_jobs(
     if company_filter != "All":
         jobs = [job for job in jobs if job.get("company") == company_filter]
 
+    if source_filter != "All":
+        jobs = [job for job in jobs if job.get("source") == source_filter]
+
     if search.strip():
         needle = search.strip().lower()
         jobs = [
@@ -133,6 +138,7 @@ def load_jobs(
             for job in jobs
             if needle in (job.get("title") or "").lower()
             or needle in (job.get("company") or "").lower()
+            or needle in (job.get("source") or "").lower()
         ]
 
     return jobs
@@ -153,6 +159,7 @@ def render_job_detail(job: dict) -> None:
         date_str = (job.get("date_found") or "")[:10]
         st.caption(
             f"Location: {job.get('location') or '-'} | "
+            f"Source: {job.get('source') or '-'} | "
             f"Status: {status} | Found: {date_str}"
         )
         if job.get("url"):
@@ -391,6 +398,8 @@ with st.sidebar:
     score_range = st.slider("Score Range", 0, 100, (0, 100), step=5)
     companies = ["All"] + get_distinct_companies()
     company_filter = st.selectbox("Company", companies)
+    sources = ["All"] + get_distinct_sources()
+    source_filter = st.selectbox("Source", sources)
     search_query = st.text_input("Search", placeholder="title or company")
 
     st.divider()
@@ -411,7 +420,7 @@ if page == "Dashboard":
 
     st.divider()
 
-    jobs = load_jobs(status_filter, score_range, company_filter, search_query)
+    jobs = load_jobs(status_filter, score_range, company_filter, source_filter, search_query)
 
     if not jobs:
         st.info(
@@ -428,6 +437,7 @@ if page == "Dashboard":
                     "": score_icon(score),
                     "Title": job.get("title", ""),
                     "Company": job.get("company", ""),
+                    "Source": job.get("source", ""),
                     "Location": job.get("location", ""),
                     "Score": score,
                     "Status": job.get("status") or "found",

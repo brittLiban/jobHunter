@@ -19,6 +19,29 @@ COMPANY_SLUGS: list[str] = [
     # Add more verified Greenhouse slugs here.
 ]
 
+GREENHOUSE_BOARD_NAMES: list[str] = COMPANY_SLUGS
+ASHBY_BOARD_NAMES: list[str] = [
+    # Example: "linear"
+]
+LEVER_SITE_NAMES: list[str] = [
+    # Example: "box"
+]
+WORKABLE_COMPANY_NAMES: list[str] = [
+    # Example: "ProgressSoft"
+]
+COMPANY_SITE_TARGETS: list[dict[str, object]] = [
+    {
+        "name": "stripe",
+        "domain": "stripe.com",
+        "careers_urls": ["https://stripe.com/jobs/search"],
+    },
+    {
+        "name": "figma",
+        "domain": "figma.com",
+        "careers_urls": ["https://www.figma.com/careers/"],
+    },
+]
+
 DEFAULT_RESUME_ROOT = Path(
     os.environ.get(
         "JOB_HUNTER_RESUME_ROOT",
@@ -98,6 +121,14 @@ def _optional_int_from_env(name: str, default: int | None) -> int | None:
 
     parsed = int(value)
     return max(1, parsed)
+
+
+COMPANY_SITE_DISCOVERY_ENABLED: bool = _env_bool("COMPANY_SITE_DISCOVERY_ENABLED", True)
+SITEMAP_DISCOVERY_ENABLED: bool = _env_bool("SITEMAP_DISCOVERY_ENABLED", True)
+DISCOVERY_MAX_PAGES_PER_COMPANY: int = int(os.environ.get("DISCOVERY_MAX_PAGES_PER_COMPANY", "24"))
+DISCOVERY_MAX_JOB_URLS_PER_COMPANY: int = int(
+    os.environ.get("DISCOVERY_MAX_JOB_URLS_PER_COMPANY", "20")
+)
 
 
 RESUME_VARIANTS: dict[str, dict[str, object]] = {

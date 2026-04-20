@@ -307,6 +307,12 @@ def get_distinct_companies() -> list[str]:
     return [row["company"] for row in rows]
 
 
+def get_distinct_sources() -> list[str]:
+    with _get_conn() as conn:
+        rows = conn.execute("SELECT DISTINCT source FROM jobs ORDER BY source").fetchall()
+    return [row["source"] for row in rows if row["source"]]
+
+
 def create_application(job_id: int, status: str = "found") -> int:
     """
     Create an application row if one does not exist and return its id.
