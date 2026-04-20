@@ -1,0 +1,76 @@
+version: "3.9"
+
+# ── Shared build context ──────────────────────────────────────────────────────
+x-app-build: &app-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - job_data:/app/data
+  environment:
+    - OLLAMA_URL=http://ollama:11434/api/generate
+    - DB_PATH=/app/data/jobs.db
+  depends_on:
+    ollama:
+      condition: service_healthy
+  restart: unless-stopped
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+
+  # Ollama — local LLM server
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Model pull — runs once to pull the model, then exits
+  model-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: >
+      sh -c "ollama pull llama3.1:8b-instruct-q4_K_M"
+    restart: "no"
+
+  # Dashboard — always-on Streamlit UI
+  dashboard:
+    <<: *app-build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dashboard
+    ports:
+      - "8501:8501"
+
+  # Scraper — run manually with: docker compose run --rm scraper
+  scraper:
+    <<: *app-build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: scraper
+    restart: "no"
+    profiles:
+      - scraper   # not started by default; run explicitly
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  job_data:
+    driver: local
+  ollama_models:
+    driver: local
