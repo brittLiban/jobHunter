@@ -1,14 +1,14 @@
-version: "3.9"
-
 x-app-build: &app-build
   build:
     context: .
     dockerfile: Dockerfile
   volumes:
     - job_data:/app/data
+    - ${JOB_HUNTER_RESUME_HOST_DIR:-C:/Users/liban/Desktop/01_Career/Resumes}:/resumes:ro
   environment:
     - OLLAMA_URL=http://ollama:11434/api/generate
     - DB_PATH=/app/data/jobs.db
+    - JOB_HUNTER_RESUME_ROOT=/resumes
     - SCHEDULER_INTERVAL_HOURS=6
     - PLAYWRIGHT_HEADLESS=true
 
@@ -84,6 +84,7 @@ services:
     environment:
       - OLLAMA_URL=http://ollama:11434/api/generate
       - DB_PATH=/app/data/jobs.db
+      - JOB_HUNTER_RESUME_ROOT=/resumes
       - SCHEDULER_INTERVAL_HOURS=6
       - PLAYWRIGHT_HEADLESS=true
       - AUTO_APPLY_ENABLED=true

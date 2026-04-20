@@ -19,6 +19,17 @@ COMPANY_SLUGS: list[str] = [
     # Add more verified Greenhouse slugs here.
 ]
 
+DEFAULT_RESUME_ROOT = Path(
+    os.environ.get(
+        "JOB_HUNTER_RESUME_ROOT",
+        r"C:\Users\liban\Desktop\01_Career\Resumes",
+    )
+)
+
+
+def _resume_path(filename: str) -> str:
+    return str(DEFAULT_RESUME_ROOT / filename)
+
 PREFERRED_LOCATIONS: list[str] = [
     "remote",
     "kent",
@@ -92,7 +103,7 @@ def _optional_int_from_env(name: str, default: int | None) -> int | None:
 RESUME_VARIANTS: dict[str, dict[str, object]] = {
     "software_engineer": {
         "label": "Software Engineer",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_SWE.docx",
+        "path": _resume_path("Liban_Britt_SWE.docx"),
         "target_roles": [
             "software engineer",
             "backend engineer",
@@ -108,7 +119,7 @@ RESUME_VARIANTS: dict[str, dict[str, object]] = {
     },
     "solution_engineer": {
         "label": "Solution Engineer",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_PandaDoc_SE_Resume_ATS.docx",
+        "path": _resume_path("Liban_Britt_PandaDoc_SE_Resume_ATS.docx"),
         "target_roles": [
             "solution engineer",
             "sales engineer",
@@ -119,7 +130,7 @@ RESUME_VARIANTS: dict[str, dict[str, object]] = {
     },
     "qa_engineer": {
         "label": "QA / Test Engineer",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_K2United_QA.docx",
+        "path": _resume_path("Liban_Britt_K2United_QA.docx"),
         "target_roles": [
             "qa engineer",
             "quality assurance engineer",
@@ -130,7 +141,7 @@ RESUME_VARIANTS: dict[str, dict[str, object]] = {
     },
     "system_field_analyst": {
         "label": "System Field Analyst",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_Symbotic_Resume_ATS.docx",
+        "path": _resume_path("Liban_Britt_Symbotic_Resume_ATS.docx"),
         "target_roles": [
             "system field analyst",
             "field engineer",
@@ -141,7 +152,7 @@ RESUME_VARIANTS: dict[str, dict[str, object]] = {
     },
     "salesforce_admin": {
         "label": "Salesforce / RevOps",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_DialedInData_Salesforce.docx",
+        "path": _resume_path("Liban_Britt_DialedInData_Salesforce.docx"),
         "target_roles": [
             "salesforce administrator",
             "salesforce analyst",
@@ -152,7 +163,7 @@ RESUME_VARIANTS: dict[str, dict[str, object]] = {
     },
     "nlp_engineer": {
         "label": "NLP / AI Engineer",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_NLP_Resume.docx",
+        "path": _resume_path("Liban_Britt_NLP_Resume.docx"),
         "target_roles": [
             "machine learning engineer",
             "nlp engineer",
@@ -163,7 +174,7 @@ RESUME_VARIANTS: dict[str, dict[str, object]] = {
     },
     "erp_solution_engineer": {
         "label": "ERP Solution Engineer",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_Epicor_SolutionEngineer.docx",
+        "path": _resume_path("Liban_Britt_Epicor_SolutionEngineer.docx"),
         "target_roles": [
             "solution engineer",
             "sales engineer",
@@ -173,7 +184,7 @@ RESUME_VARIANTS: dict[str, dict[str, object]] = {
     },
     "test_engineer_qatar": {
         "label": "Test Engineer Qatar",
-        "path": r"C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_NairSystems_TestEngineer_Qatar.docx",
+        "path": _resume_path("Liban_Britt_NairSystems_TestEngineer_Qatar.docx"),
         "target_roles": [
             "test engineer",
             "qa engineer",
