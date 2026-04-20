@@ -479,6 +479,14 @@ USER_PROFILE: dict = {
             "self_identification_acknowledgement": "I understand that self-identification is voluntary.",
             "hispanic_ethnicity": "",
             "conference_history": "",
+            # Education details (needed for intern/new-grad forms)
+            "discipline": "Software Development & Data Analytics",
+            "graduation_year": "2025",
+            "start_date_year": "2025",
+            "sat_act_score": "",
+            # Stripe-specific
+            "stripe_employment_history": "No",
+            "why_fit": "",   # populated from LLM tailor output at apply time
         },
     },
 }

@@ -24,7 +24,13 @@ from .base import ApplyResult, BaseJobSubmitter
 logger = logging.getLogger(__name__)
 
 _SUBMIT_SUCCESS_RE = re.compile(
-    r"(thank you|application submitted|your application has been submitted)",
+    r"(thank you|application submitted|your application has been submitted"
+    r"|we.ve received your application|successfully submitted"
+    r"|you.ve applied|application received|we.ll be in touch)",
+    re.IGNORECASE,
+)
+_SUBMIT_ERROR_RE = re.compile(
+    r"(please fix|there (was|were) (an? )?error|field is required|invalid)",
     re.IGNORECASE,
 )
 
@@ -83,15 +89,16 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                 filled_fields.append("Last Name")
                 handled_required_patterns.add(_normalize_label("Last Name"))
 
-                if defaults.get("preferred_name"):
-                    await _fill_text_field(page, "Preferred First Name", defaults["preferred_name"])
-                    filled_fields.append("Preferred First Name")
-                if defaults.get("preferred_name"):
-                    await _fill_text_field(page, "Preferred Name", defaults["preferred_name"])
-                    filled_fields.append("Preferred Name")
-                if defaults.get("pronouns"):
-                    await _fill_text_field(page, "Pronouns", defaults["pronouns"])
-                    filled_fields.append("Pronouns")
+                # Optional name/pronoun fields — only fill if the form actually has them
+                for opt_label, opt_key in [
+                    ("Preferred First Name", "preferred_name"),
+                    ("Preferred Name",       "preferred_name"),
+                    ("Pronouns",             "pronouns"),
+                ]:
+                    val = defaults.get(opt_key)
+                    if val and await _label_exists(page, opt_label):
+                        await _fill_text_field(page, opt_label, val)
+                        filled_fields.append(opt_label)
 
                 await _fill_text_field(page, "Email", defaults["email"])
                 filled_fields.append("Email")
@@ -124,22 +131,41 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     skipped_optional_fields.append("Cover Letter")
 
                 rules = [
+                    # Education
                     _Rule("We are always aiming to keep our school list inclusive", defaults.get("school_name"), "text"),
+                    _Rule("School", defaults.get("school_name"), "text"),
+                    _Rule("University", defaults.get("school_name"), "text"),
+                    _Rule("Institution", defaults.get("school_name"), "text"),
+                    _Rule("Degree", defaults.get("degree"), "text"),
+                    _Rule("Major", defaults.get("discipline"), "text"),
+                    _Rule("Discipline", defaults.get("discipline"), "text"),
+                    _Rule("Field of Study", defaults.get("discipline"), "text"),
                     _Rule("As part of our commitment to understanding candidates' backgrounds", defaults.get("sat_act_score"), "text"),
                     _Rule("Similarly, we also invite you to provide your GPA", defaults.get("gpa"), "text"),
+                    # Graduation / availability
+                    _Rule("Start Date Year", defaults.get("start_date_year"), "text"),
+                    _Rule("Expected Graduation Year", defaults.get("graduation_year"), "text"),
+                    _Rule("Graduation Year", defaults.get("graduation_year"), "text"),
+                    _Rule("Anticipated Graduation Year", defaults.get("graduation_year"), "text"),
+                    _Rule("Expected Graduation Date", defaults.get("graduation_year"), "text"),
+                    # Links & fit
                     _Rule("LinkedIn Profile, Github, Personal Website, or Portfolio", defaults.get("links"), "text"),
                     _Rule("Have you ever been employed by Stripe or a Stripe affiliate?", defaults.get("stripe_employment_history", "No"), "select"),
                     _Rule("Tell us a little bit about you and why you think you would be a good fit", defaults.get("why_fit"), "text"),
                     _Rule("As Stripe grows, we are always aiming to expand our recruitment presence", defaults.get("conference_history"), "text"),
+                    # Location preferences
                     _Rule("What is your first location preference?", _location_preference(defaults, 0), "select"),
                     _Rule("Second location preference", _location_preference(defaults, 1), "select"),
                     _Rule("Third location preference", _location_preference(defaults, 2), "select"),
+                    # Work authorization
                     _Rule("Are you currently eligible to work in the United States?", defaults.get("work_authorization_us_text"), "select"),
                     _Rule("Do you require visa sponsorship, now or in the future, to continue working in the United States?", defaults.get("requires_sponsorship_text"), "select"),
-                    _Rule("Self-identification is voluntary. Please acknowledge this in the drop down below.", defaults.get("self_identification_acknowledgement"), "select"),
+                    # Employment history
                     _Rule("Who is your current or previous employer?", defaults.get("current_or_previous_employer"), "text"),
                     _Rule("What is your current or previous job title?", defaults.get("current_or_previous_job_title"), "text"),
                     _Rule("If located in the US, in what city and state do you reside?", defaults.get("city_state"), "text"),
+                    # EEO / self-ID
+                    _Rule("Self-identification is voluntary. Please acknowledge this in the drop down below.", defaults.get("self_identification_acknowledgement"), "select"),
                     _Rule("Gender", defaults.get("gender_text"), "select"),
                     _Rule("Are you Hispanic/Latino?", defaults.get("hispanic_ethnicity"), "select"),
                     _Rule("Veteran Status", defaults.get("veteran_status"), "select"),
@@ -423,15 +449,44 @@ async def _get_field_id(page: Page, label_text: str) -> str:
 
 
 async def _wait_for_submission_confirmation(page: Page) -> str:
-    await page.wait_for_timeout(1500)
-    for _ in range(20):
+    """
+    Wait up to 30 seconds for any of these success signals after clicking Submit:
+      1. Success text pattern in page body
+      2. Submit button disappeared from DOM (form replaced by confirmation)
+      3. URL changed to a thank-you / confirmation path
+    Raises TimeoutError on validation errors or timeout.
+    """
+    original_url = page.url
+    await page.wait_for_timeout(2000)
+
+    for _ in range(60):   # 60 * 500 ms = 30 s
+        current_url = page.url
+
+        # Navigation-based success (Stripe redirects to /jobs/*/success)
+        if current_url != original_url:
+            if any(tok in current_url for tok in ("success", "thank", "confirmation", "applied", "complete")):
+                return f"Redirected to {current_url}"
+            # Any navigation away from the apply URL is treated as success
+            if "/apply" in original_url and "/apply" not in current_url:
+                return f"Redirected away from apply page: {current_url}"
+
         text = await page.locator("body").inner_text()
+
+        # Explicit success phrase in body
         match = _SUBMIT_SUCCESS_RE.search(text)
         if match:
             return match.group(0)
+
+        # Submit button disappeared → form replaced by confirmation widget
         if not await page.get_by_role("button", name=re.compile(r"submit application", re.I)).count():
-            return "Application submitted"
+            return "Application submitted (submit button removed from DOM)"
+
+        # Explicit validation error — fail fast so we don't submit a bad form
+        if _SUBMIT_ERROR_RE.search(text):
+            raise ValueError(f"Form validation error after submit: {text[:300]}")
+
         await page.wait_for_timeout(500)
+
     raise TimeoutError("Submit button did not transition to a confirmation state.")
 
 
