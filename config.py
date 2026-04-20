@@ -16,19 +16,122 @@ from resume_loader import load_resume_text
 COMPANY_SLUGS: list[str] = [
     "stripe",
     "figma",
-    # Add more verified Greenhouse slugs here.
 ]
 
-GREENHOUSE_BOARD_NAMES: list[str] = COMPANY_SLUGS
+# ── Greenhouse ATS board slugs ────────────────────────────────────────────────
+# Find yours at: https://boards.greenhouse.io/{slug}
+GREENHOUSE_BOARD_NAMES: list[str] = [
+    # Original targets
+    "stripe",
+    "figma",
+    # Seattle / PNW - strong entry-level / intern pipelines
+    "smartsheet",
+    "rover",
+    "outreach",
+    "convoy",
+    "redfin",
+    "zillow",
+    "docusign",
+    "expedia",
+    # Remote-friendly / entry-level friendly tech companies
+    "notion",
+    "asana",
+    "duolingo",
+    "reddit",
+    "discord",
+    "dropbox",
+    "shopify",
+    "squarespace",
+    "hubspot",
+    "zendesk",
+    "twitch",
+    "airbnb",
+    "lyft",
+    "doordash",
+    "zoom",
+    "coinbase",
+    "robinhood",
+    "brex",
+    "gusto",
+    "rippling",
+    "chime",
+    "plaid",
+    "lattice",
+    "amplitude",
+    "mixpanel",
+    "vanta",
+    "verkada",
+    "benchling",
+    "okta",
+    "pagerduty",
+    "datadog",
+    "mongodb",
+    "twilio",
+    "cloudflare",
+    "elastic",
+    "fastly",
+    "newrelic",
+    "atlassian",
+    "intercom",
+    "sendgrid",
+    "segment",
+    "figma",
+    "canva",
+    "airtable",
+    "coda",
+    "pitch",
+    "linear",
+]
+
+# ── Ashby ATS board slugs ─────────────────────────────────────────────────────
+# Verify at: https://jobs.ashbyhq.com/{slug}
 ASHBY_BOARD_NAMES: list[str] = [
-    # Example: "linear"
+    "retool",
+    "vercel",
+    "ramp",
+    "mercury",
+    "descript",
+    "cal",
+    "plain",
+    "runway",
+    "rome",
+    "supabase",
+    "resend",
+    "clerk",
+    "prisma",
+    "turso",
+    "trigger",
+    "inngest",
+    "nango",
+    "openai",
+    "anthropic",
+    "cohere",
+    "mistral",
+    "together",
+    "perplexity",
 ]
+
+# ── Lever ATS ─────────────────────────────────────────────────────────────────
+# Verify at: https://jobs.lever.co/{slug}
 LEVER_SITE_NAMES: list[str] = [
-    # Example: "box"
+    "box",
+    "eventbrite",
+    "yelp",
+    "netflix",
+    "spotify",
+    "thumbtack",
+    "1password",
+    "hashicorp",
+    "benchling",
+    "gong",
+    "figma",       # some roles appear on lever too
 ]
-WORKABLE_COMPANY_NAMES: list[str] = [
-    # Example: "ProgressSoft"
-]
+
+# ── Workable ──────────────────────────────────────────────────────────────────
+WORKABLE_COMPANY_NAMES: list[str] = []
+
+# ── Company career-site crawl targets ────────────────────────────────────────
+# Used when the company doesn't use a standard public ATS API.
 COMPANY_SITE_TARGETS: list[dict[str, object]] = [
     {
         "name": "stripe",
@@ -39,6 +142,69 @@ COMPANY_SITE_TARGETS: list[dict[str, object]] = [
         "name": "figma",
         "domain": "figma.com",
         "careers_urls": ["https://www.figma.com/careers/"],
+    },
+    {
+        "name": "amazon",
+        "domain": "amazon.jobs",
+        "careers_urls": [
+            "https://www.amazon.jobs/en/search?base_query=software+engineer+intern&loc_query=Seattle",
+            "https://www.amazon.jobs/en/search?base_query=new+grad+software+engineer",
+        ],
+    },
+    {
+        "name": "microsoft",
+        "domain": "careers.microsoft.com",
+        "careers_urls": [
+            "https://careers.microsoft.com/v2/global/en/search?q=software+engineer+intern&l=en_US",
+            "https://careers.microsoft.com/v2/global/en/search?q=new+graduate+software+engineer",
+        ],
+    },
+    {
+        "name": "google",
+        "domain": "careers.google.com",
+        "careers_urls": [
+            "https://careers.google.com/jobs/results/?q=software+engineer+intern&location=Seattle",
+            "https://careers.google.com/jobs/results/?q=software+engineering+intern+&jex=ENTRY_LEVEL",
+        ],
+    },
+    {
+        "name": "apple",
+        "domain": "jobs.apple.com",
+        "careers_urls": [
+            "https://jobs.apple.com/en-us/search?search=software+engineer+intern&sort=relevance",
+        ],
+    },
+    {
+        "name": "meta",
+        "domain": "metacareers.com",
+        "careers_urls": [
+            "https://www.metacareers.com/jobs?offices[0]=Seattle%2C%20WA&q=software+engineer+intern",
+        ],
+    },
+    {
+        "name": "tmobile",
+        "domain": "careers.t-mobile.com",
+        "careers_urls": ["https://careers.t-mobile.com/job-search-results/?keyword=software+engineer"],
+    },
+    {
+        "name": "boeing",
+        "domain": "boeing.com",
+        "careers_urls": ["https://jobs.boeing.com/search-jobs/software%20engineer/185/1"],
+    },
+    {
+        "name": "expedia",
+        "domain": "expediagroup.com",
+        "careers_urls": ["https://careers.expediagroup.com/jobs?keywords=software+engineer+intern"],
+    },
+    {
+        "name": "indeed",
+        "domain": "indeed.com",
+        "careers_urls": ["https://www.indeed.com/cmp/Indeed/jobs?q=software+engineer"],
+    },
+    {
+        "name": "spacex",
+        "domain": "spacex.com",
+        "careers_urls": ["https://www.spacex.com/careers/search/?department=Software"],
     },
 ]
 
@@ -241,12 +407,12 @@ MIN_SCORE: int = 60
 PRIORITY_SCORE: int = 80
 ENABLE_LOCATION_PREFILTER: bool = True
 SCHEDULER_INTERVAL_HOURS: int = int(os.environ.get("SCHEDULER_INTERVAL_HOURS", "6"))
-AUTO_APPLY_ENABLED: bool = _env_bool("AUTO_APPLY_ENABLED", False)
+AUTO_APPLY_ENABLED: bool = _env_bool("AUTO_APPLY_ENABLED", True)
 AUTO_APPLY_DRY_RUN: bool = _env_bool("AUTO_APPLY_DRY_RUN", False)
 AUTO_APPLY_MIN_SCORE: int = int(os.environ.get("AUTO_APPLY_MIN_SCORE", str(PRIORITY_SCORE)))
 AUTO_APPLY_MAX_PER_RUN: int | None = _optional_int_from_env(
     "AUTO_APPLY_MAX_PER_RUN",
-    3,
+    20,   # apply up to 20 per pipeline run
 )
 PLAYWRIGHT_HEADLESS: bool = _env_bool("PLAYWRIGHT_HEADLESS", True)
 
@@ -257,7 +423,7 @@ OLLAMA_TIMEOUT: int = int(os.environ.get("OLLAMA_TIMEOUT", "300"))
 MAX_CONCURRENT_LLM: int = 2
 MAX_UNSCORED_JOBS_PER_RUN: int | None = _optional_int_from_env(
     "JOB_HUNTER_MAX_UNSCORED_JOBS_PER_RUN",
-    8,
+    50,   # score up to 50 jobs per run with local Ollama
 )
 
 
