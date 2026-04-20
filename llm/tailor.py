@@ -1,158 +1,177 @@
 """
-llm/tailor.py — Two separate LLM calls for priority jobs (score >= 80):
+llm/tailor.py - Tailor resume content and application answers for priority jobs.
 
-  1. tailor_resume()   — Rewrite top 3 resume bullets + suggested summary.
-  2. generate_answers() — Why this role, why hire me, short cover letter.
+Each call validates the returned JSON with Pydantic. On validation failure,
+the module retries once with a stricter prompt and returns the attempt log.
 """
 import json
 import logging
+from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from .client import call_ollama
 
 logger = logging.getLogger(__name__)
 
-# ── Pydantic models ───────────────────────────────────────────────────────────
 
 class TailoredResume(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tailored_bullets: list[str]
     suggested_summary: str
 
-    @field_validator("tailored_bullets", mode="before")
+    @field_validator("tailored_bullets")
     @classmethod
-    def ensure_three_bullets(cls, v) -> list[str]:
-        if not isinstance(v, list):
-            return ["", "", ""]
-        padded = list(v) + [""] * 3
-        return [str(b) for b in padded[:3]]
+    def validate_bullet_count(cls, value: list[str]) -> list[str]:
+        if len(value) != 3:
+            raise ValueError("tailored_bullets must contain exactly 3 items")
+        return value
 
 
 class ApplicationAnswers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     why_role: str
     why_hire: str
     cover_letter_short: str
 
-    @field_validator("why_role", "why_hire", "cover_letter_short", mode="before")
-    @classmethod
-    def coerce_str(cls, v) -> str:
-        return str(v) if v is not None else ""
-
-
-# ── Prompts ───────────────────────────────────────────────────────────────────
 
 _BULLETS_PROMPT_1 = """\
-You are a professional resume writer. Rewrite the candidate's top 3 resume
-bullets to match the keywords and priorities in the job description below.
-Keep each bullet to one line, starting with a strong action verb, and include
-a quantified result where possible.
+Rewrite the candidate's top 3 resume bullets so they align with the role.
+
+Return ONLY a single JSON object with exactly these keys:
+- tailored_bullets: array of exactly 3 strings
+- suggested_summary: string
 
 Candidate Resume:
-{resume}
+{resume_text}
 
-Target Job Description:
+Full Job Description:
 {description}
-
-Return ONLY a single JSON object:
-{{
-  "tailored_bullets"  : ["bullet 1", "bullet 2", "bullet 3"],
-  "suggested_summary" : "2-3 sentence professional summary tailored to this role"
-}}
 """
 
 _BULLETS_PROMPT_2 = """\
-Return ONLY JSON. No other text.
-Rewrite 3 resume bullets for this job. Keep them concise with metrics.
+Return ONLY valid JSON. No markdown. No commentary.
 
-Resume: {resume}
-Job:    {description}
+JSON schema:
+{{
+  "tailored_bullets": ["string", "string", "string"],
+  "suggested_summary": "string"
+}}
 
-Required JSON: tailored_bullets (array of 3 strings), suggested_summary (string).
-JSON:"""
-
-_ANSWERS_PROMPT_1 = """\
-You are a career coach helping a candidate craft their application.
+Rules:
+- tailored_bullets must contain exactly 3 strings.
+- suggested_summary must be a concise summary for this job.
+- Use the full resume and the full job description.
 
 Candidate Resume:
-{resume}
+{resume_text}
 
-Job Title   : {title}
-Company     : {company}
-Job Description:
+Full Job Description:
+{description}
+"""
+
+_ANSWERS_PROMPT_1 = """\
+Write concise application materials for this role.
+
+Return ONLY a single JSON object with exactly these keys:
+- why_role: string
+- why_hire: string
+- cover_letter_short: string
+
+Candidate Resume:
+{resume_text}
+
+Full Job Description:
 {description}
 
-Return ONLY a single JSON object:
-{{
-  "why_role"           : "2-3 sentences explaining genuine interest in this specific role",
-  "why_hire"           : "2-3 sentences on why the candidate is the best fit",
-  "cover_letter_short" : "concise 3-paragraph cover letter under 280 words"
-}}
+Job Title: {title}
+Company: {company}
 """
 
 _ANSWERS_PROMPT_2 = """\
-Return ONLY JSON. No explanation.
-Fields: why_role (string), why_hire (string), cover_letter_short (string).
+Return ONLY valid JSON. No markdown. No commentary.
 
-Resume: {resume}
-Job: {title} at {company}
-Description: {description}
+JSON schema:
+{{
+  "why_role": "string",
+  "why_hire": "string",
+  "cover_letter_short": "string"
+}}
 
-JSON:"""
+Rules:
+- All values must be strings.
+- cover_letter_short should stay concise.
+- Use the full resume and the full job description.
+
+Candidate Resume:
+{resume_text}
+
+Full Job Description:
+{description}
+
+Job Title: {title}
+Company: {company}
+"""
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
-
-async def tailor_resume(resume: str, description: str) -> TailoredResume | None:
-    """Rewrite top 3 bullets and generate a tailored summary. Two attempts."""
-    kwargs = dict(resume=resume[:2000], description=description[:2000])
+async def tailor_resume(
+    resume_text: str,
+    description: str,
+) -> tuple[TailoredResume | None, dict[str, Any]]:
+    """Rewrite top 3 bullets and generate a tailored summary."""
+    attempts: list[dict[str, Any]] = []
+    kwargs = {"resume_text": resume_text, "description": description}
 
     raw = await _safe_call(_BULLETS_PROMPT_1.format(**kwargs))
-    result = _parse_bullets(raw, attempt=1)
-    if result:
-        return result
+    result, error = _parse_bullets(raw)
+    attempts.append(_attempt_log(1, "default", raw, error))
+    if result is not None:
+        return result, {"result": result.model_dump(), "attempts": attempts}
 
-    logger.warning("[Tailor/Bullets] Retrying…")
+    logger.warning("[Tailor/Bullets] Retrying with strict prompt")
     raw2 = await _safe_call(_BULLETS_PROMPT_2.format(**kwargs))
-    result2 = _parse_bullets(raw2, attempt=2)
-    if result2:
-        return result2
+    result2, error2 = _parse_bullets(raw2)
+    attempts.append(_attempt_log(2, "strict", raw2, error2))
+    if result2 is not None:
+        return result2, {"result": result2.model_dump(), "attempts": attempts}
 
     logger.error("[Tailor/Bullets] Both attempts failed")
-    return None
+    return None, {"result": None, "attempts": attempts}
 
 
 async def generate_answers(
-    resume: str,
+    resume_text: str,
     title: str,
     company: str,
     description: str,
-) -> ApplicationAnswers | None:
-    """Generate why_role, why_hire, and cover_letter_short. Two attempts."""
-    kwargs = dict(
-        resume=resume[:2000],
-        title=title,
-        company=company,
-        description=description[:2000],
-    )
+) -> tuple[ApplicationAnswers | None, dict[str, Any]]:
+    """Generate why_role, why_hire, and cover_letter_short."""
+    attempts: list[dict[str, Any]] = []
+    kwargs = {
+        "resume_text": resume_text,
+        "title": title,
+        "company": company,
+        "description": description,
+    }
 
     raw = await _safe_call(_ANSWERS_PROMPT_1.format(**kwargs))
-    result = _parse_answers(raw, attempt=1)
-    if result:
-        return result
+    result, error = _parse_answers(raw)
+    attempts.append(_attempt_log(1, "default", raw, error))
+    if result is not None:
+        return result, {"result": result.model_dump(), "attempts": attempts}
 
-    logger.warning("[Tailor/Answers] Retrying…")
-    kwargs["resume"] = resume[:1200]
-    kwargs["description"] = description[:1200]
+    logger.warning("[Tailor/Answers] Retrying with strict prompt")
     raw2 = await _safe_call(_ANSWERS_PROMPT_2.format(**kwargs))
-    result2 = _parse_answers(raw2, attempt=2)
-    if result2:
-        return result2
+    result2, error2 = _parse_answers(raw2)
+    attempts.append(_attempt_log(2, "strict", raw2, error2))
+    if result2 is not None:
+        return result2, {"result": result2.model_dump(), "attempts": attempts}
 
     logger.error("[Tailor/Answers] Both attempts failed")
-    return None
+    return None, {"result": None, "attempts": attempts}
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _safe_call(prompt: str) -> str:
     try:
@@ -162,21 +181,40 @@ async def _safe_call(prompt: str) -> str:
         return ""
 
 
-def _parse_bullets(raw: str, attempt: int) -> TailoredResume | None:
-    try:
-        return TailoredResume(**json.loads(raw))
-    except json.JSONDecodeError as exc:
-        logger.warning("[Tailor/Bullets] attempt %d — JSON error: %s", attempt, exc)
-    except Exception as exc:
-        logger.warning("[Tailor/Bullets] attempt %d — validation error: %s", attempt, exc)
-    return None
+def _attempt_log(
+    attempt: int,
+    variant: str,
+    raw_response: str,
+    error: str | None,
+) -> dict[str, Any]:
+    return {
+        "attempt": attempt,
+        "variant": variant,
+        "validated": error is None,
+        "error": error,
+        "raw_response": raw_response,
+    }
 
 
-def _parse_answers(raw: str, attempt: int) -> ApplicationAnswers | None:
+def _parse_bullets(raw: str) -> tuple[TailoredResume | None, str | None]:
     try:
-        return ApplicationAnswers(**json.loads(raw))
+        data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        logger.warning("[Tailor/Answers] attempt %d — JSON error: %s", attempt, exc)
-    except Exception as exc:
-        logger.warning("[Tailor/Answers] attempt %d — validation error: %s", attempt, exc)
-    return None
+        return None, f"json_decode_error: {exc}"
+
+    try:
+        return TailoredResume.model_validate(data, strict=True), None
+    except ValidationError as exc:
+        return None, f"validation_error: {exc}"
+
+
+def _parse_answers(raw: str) -> tuple[ApplicationAnswers | None, str | None]:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, f"json_decode_error: {exc}"
+
+    try:
+        return ApplicationAnswers.model_validate(data, strict=True), None
+    except ValidationError as exc:
+        return None, f"validation_error: {exc}"

@@ -1,10 +1,11 @@
 """
-llm/client.py — Thin async wrapper around the Ollama HTTP API.
+llm/client.py - Thin async wrapper around the Ollama HTTP API.
 
 All LLM modules go through call_ollama(); swap this file to route to a
 different backend (OpenAI-compatible, Anthropic, etc.) without touching
 the rest of the codebase.
 """
+import asyncio
 import logging
 
 import httpx
@@ -12,17 +13,31 @@ import httpx
 import config
 
 logger = logging.getLogger(__name__)
+_ollama_semaphore: asyncio.Semaphore | None = None
+
+
+def configure_ollama(max_concurrent: int) -> None:
+    """Set the maximum number of in-flight Ollama requests."""
+    global _ollama_semaphore
+    _ollama_semaphore = asyncio.Semaphore(max(1, max_concurrent))
+
+
+def _get_ollama_semaphore() -> asyncio.Semaphore:
+    global _ollama_semaphore
+    if _ollama_semaphore is None:
+        _ollama_semaphore = asyncio.Semaphore(max(1, config.MAX_CONCURRENT_LLM))
+    return _ollama_semaphore
 
 
 async def call_ollama(prompt: str, system: str = "") -> str:
     """
     Send a single prompt to Ollama and return the raw response string.
 
-    Always requests JSON output via the 'format' field.
-    Raises httpx.HTTPError on network/HTTP failures — callers handle retries.
+    Always requests JSON output via the "format" field.
+    Raises httpx.HTTPError on network/HTTP failures; callers handle retries.
     """
     payload: dict = {
-        "model":  config.OLLAMA_MODEL,
+        "model": config.OLLAMA_MODEL,
         "prompt": prompt,
         "format": "json",
         "stream": False,
@@ -30,22 +45,28 @@ async def call_ollama(prompt: str, system: str = "") -> str:
     if system:
         payload["system"] = system
 
-    logger.debug("[Ollama] → model=%s prompt_len=%d", config.OLLAMA_MODEL, len(prompt))
+    logger.debug("[Ollama] -> model=%s prompt_len=%d", config.OLLAMA_MODEL, len(prompt))
 
-    async with httpx.AsyncClient(timeout=config.OLLAMA_TIMEOUT) as client:
-        try:
-            resp = await client.post(config.OLLAMA_URL, json=payload)
-            resp.raise_for_status()
-        except httpx.ConnectError:
-            logger.error(
-                "[Ollama] Cannot connect to %s — is Ollama running?", config.OLLAMA_URL
-            )
-            raise
-        except httpx.HTTPStatusError as exc:
-            logger.error("[Ollama] HTTP %s: %s", exc.response.status_code, exc.response.text[:200])
-            raise
+    async with _get_ollama_semaphore():
+        async with httpx.AsyncClient(timeout=config.OLLAMA_TIMEOUT) as client:
+            try:
+                resp = await client.post(config.OLLAMA_URL, json=payload)
+                resp.raise_for_status()
+            except httpx.ConnectError:
+                logger.error(
+                    "[Ollama] Cannot connect to %s - is Ollama running?",
+                    config.OLLAMA_URL,
+                )
+                raise
+            except httpx.HTTPStatusError as exc:
+                logger.error(
+                    "[Ollama] HTTP %s: %s",
+                    exc.response.status_code,
+                    exc.response.text[:200],
+                )
+                raise
 
     data = resp.json()
     raw = data.get("response", "")
-    logger.debug("[Ollama] ← %d chars", len(raw))
+    logger.debug("[Ollama] <- %d chars", len(raw))
     return raw

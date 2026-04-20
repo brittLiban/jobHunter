@@ -35,3 +35,7 @@ ENTRYPOINT ["streamlit", "run", "dashboard/app.py", \
 # ── Scraper / pipeline image ──────────────────────────────────────────────────
 FROM base AS scraper
 ENTRYPOINT ["python", "main.py"]
+
+# Scheduler image
+FROM base AS scheduler
+ENTRYPOINT ["python", "scheduler.py"]

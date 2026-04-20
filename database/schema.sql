@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS applications (
     extracted_data   TEXT,   -- JSON: ExtractedJob
     scorer_data      TEXT,   -- JSON: JobScore
     tailor_data      TEXT,   -- JSON: TailoredResume + ApplicationAnswers
+    apply_data       TEXT,   -- JSON: auto-apply attempt / submission log
     created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
