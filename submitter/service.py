@@ -32,3 +32,20 @@ async def auto_apply_job(
         error=f"No submitter is registered for source={source!r}.",
         blocked_reason="unsupported_source",
     )
+
+
+async def resume_manual_auto_apply_job(job: dict) -> ApplyResult:
+    source = (job.get("source") or "").strip().lower()
+    if supports_auto_apply(job):
+        return await GreenhouseSubmitter().resume_manual_checkpoint(job)
+
+    return ApplyResult(
+        source=source or "unknown",
+        apply_url="",
+        success=False,
+        submitted=False,
+        dry_run=False,
+        retryable=False,
+        error=f"No submitter is registered for source={source!r}.",
+        blocked_reason="unsupported_source",
+    )

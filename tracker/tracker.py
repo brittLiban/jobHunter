@@ -18,6 +18,9 @@ VALID_STATUSES = frozenset(
         "found",
         "scored",
         "filtered",
+        "awaiting_captcha",
+        "awaiting_email_code",
+        "awaiting_verification",
         "applied",
         "rejected",
         "interview",
@@ -25,6 +28,12 @@ VALID_STATUSES = frozenset(
         "skipped",
     }
 )
+
+MANUAL_STATUS_BY_BLOCKED_REASON = {
+    "captcha_required": "awaiting_captcha",
+    "email_code_required": "awaiting_email_code",
+    "verification_required": "awaiting_verification",
+}
 
 
 def _encode_payloads(**payloads: Any) -> dict[str, str]:
@@ -141,6 +150,28 @@ def log_apply_failure(
     logger.info("[Tracker] app=%d %s - %s", app_id, note_prefix.lower(), reason)
 
 
+def log_apply_manual_action(
+    app_id: int,
+    reason: str,
+    apply_payload: dict,
+) -> None:
+    """Persist a manual-checkpoint apply result and move the app out of the auto queue."""
+    blocked_reason = str(apply_payload.get("blocked_reason") or "").strip().lower()
+    status = MANUAL_STATUS_BY_BLOCKED_REASON.get(blocked_reason, "awaiting_verification")
+    next_step = str(apply_payload.get("next_step") or "").strip()
+    note = f"Manual action required: {reason}"
+    if next_step:
+        note = f"{note} Next step: {next_step}"
+
+    update_application(
+        app_id,
+        status=status,
+        notes=note,
+        **_encode_payloads(apply_data=apply_payload),
+    )
+    logger.info("[Tracker] app=%d manual action required - %s", app_id, blocked_reason or reason)
+
+
 def log_apply_dry_run(app_id: int, apply_payload: dict) -> None:
     """Persist a dry-run result without changing the scored/applied state."""
     update_application(
@@ -150,6 +181,17 @@ def log_apply_dry_run(app_id: int, apply_payload: dict) -> None:
         **_encode_payloads(apply_data=apply_payload),
     )
     logger.info("[Tracker] app=%d auto-apply dry run saved", app_id)
+
+
+def clear_apply_block(app_id: int, notes: str = "") -> None:
+    """Return a blocked application to the scored queue and clear the previous apply payload."""
+    update_application(
+        app_id,
+        status="scored",
+        notes=notes or "Auto-apply block cleared. Ready to retry.",
+        apply_data=None,
+    )
+    logger.info("[Tracker] app=%d auto-apply block cleared", app_id)
 
 
 def update_status(

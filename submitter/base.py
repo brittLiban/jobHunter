@@ -17,6 +17,11 @@ class ApplyResult(BaseModel):
     retryable: bool = True
     error: str | None = None
     blocked_reason: str | None = None
+    manual_action_required: bool = False
+    manual_action_type: str | None = None
+    next_step: str | None = None
+    checkpoint_url: str | None = None
+    checkpoint_artifacts: dict[str, str] | None = None
     filled_fields: list[str] = Field(default_factory=list)
     skipped_optional_fields: list[str] = Field(default_factory=list)
     unknown_required_fields: list[str] = Field(default_factory=list)

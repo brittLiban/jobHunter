@@ -471,7 +471,14 @@ def _should_retry_auto_apply(raw_apply_data: str | None) -> bool:
 
     error = str(payload.get("error") or "").strip().lower()
     blocked_reason = str(payload.get("blocked_reason") or "").strip().lower()
-    if blocked_reason in {"unsupported_source", "missing_profile_fields", "unknown_required_fields"}:
+    if blocked_reason in {
+        "unsupported_source",
+        "missing_profile_fields",
+        "unknown_required_fields",
+        "captcha_required",
+        "email_code_required",
+        "verification_required",
+    }:
         return False
     if error.startswith("no submitter is registered"):
         return False

@@ -33,6 +33,7 @@ from submitter.service import auto_apply_job
 from tracker.tracker import (
     log_apply_dry_run,
     log_apply_failure,
+    log_apply_manual_action,
     log_apply_success,
     log_extraction,
     log_failure,
@@ -281,6 +282,11 @@ async def run_auto_apply_queue(profile: dict) -> dict[str, int]:
             continue
 
         reason = result.error or "unknown_auto_apply_error"
+        if result.manual_action_required:
+            log_apply_manual_action(app_id, reason, payload)
+            counts["blocked"] += 1
+            continue
+
         log_apply_failure(app_id, reason, payload)
         if result.retryable:
             counts["failed"] += 1

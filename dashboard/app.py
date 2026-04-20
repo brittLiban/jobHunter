@@ -17,10 +17,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 from database import db as db_ops
 from resume_loader import load_resume_text
-from submitter.service import auto_apply_job
+from submitter.service import auto_apply_job, resume_manual_auto_apply_job
 from tracker.tracker import (
+    clear_apply_block,
     log_apply_dry_run,
     log_apply_failure,
+    log_apply_manual_action,
     log_apply_success,
     update_status,
 )
@@ -51,6 +53,9 @@ ALL_STATUSES = [
     "found",
     "scored",
     "filtered",
+    "awaiting_captcha",
+    "awaiting_email_code",
+    "awaiting_verification",
     "applied",
     "rejected",
     "interview",
@@ -60,12 +65,20 @@ ALL_STATUSES = [
 MANUAL_STATUSES = [
     "found",
     "scored",
+    "awaiting_captcha",
+    "awaiting_email_code",
+    "awaiting_verification",
     "applied",
     "rejected",
     "interview",
     "offer",
     "skipped",
 ]
+MANUAL_CHECKPOINT_STATUSES = {
+    "awaiting_captcha",
+    "awaiting_email_code",
+    "awaiting_verification",
+}
 
 
 def score_icon(score: int | None) -> str:
@@ -101,6 +114,24 @@ def _safe_str_list(value: object) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _safe_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _existing_path(raw: object) -> Path | None:
+    candidate = str(raw or "").strip()
+    if not candidate:
+        return None
+    path = Path(candidate)
+    if path.exists():
+        return path
+    return None
+
+
+def _is_manual_checkpoint_status(status: object) -> bool:
+    return str(status or "").strip() in MANUAL_CHECKPOINT_STATUSES
+
+
 def _collect_auto_apply_insights(jobs: list[dict]) -> dict[str, Any]:
     ready_jobs = db_ops.get_auto_apply_jobs()
     blocked_jobs: list[dict[str, Any]] = []
@@ -128,6 +159,8 @@ def _collect_auto_apply_insights(jobs: list[dict]) -> dict[str, Any]:
                 "job": label,
                 "reason": blocked_reason,
                 "error": payload.get("error") or "",
+                "posting_url": job.get("url") or "",
+                "apply_url": payload.get("checkpoint_url") or payload.get("apply_url") or "",
             }
         )
 
@@ -336,11 +369,53 @@ def render_job_detail(job: dict) -> None:
             )
             return
 
+        blocked_reason = str(apply_payload.get("blocked_reason") or "").strip()
+        missing_profile_fields = _safe_str_list(apply_payload.get("missing_profile_fields"))
+        unknown_required_fields = _safe_str_list(apply_payload.get("unknown_required_fields"))
+        checkpoint_artifacts = _safe_dict(apply_payload.get("checkpoint_artifacts"))
+        manual_action_required = bool(apply_payload.get("manual_action_required")) or _is_manual_checkpoint_status(status)
+
         if apply_payload:
-            blocked_reason = apply_payload.get("blocked_reason")
-            missing_profile_fields = _safe_str_list(apply_payload.get("missing_profile_fields"))
-            unknown_required_fields = _safe_str_list(apply_payload.get("unknown_required_fields"))
-            if blocked_reason:
+            if manual_action_required:
+                st.warning(
+                    f"Manual action is required before this application can continue: "
+                    f"{apply_payload.get('error') or blocked_reason or 'manual checkpoint detected'}"
+                )
+                next_step = str(apply_payload.get("next_step") or "").strip()
+                if next_step:
+                    st.caption(next_step)
+
+                checkpoint_url = str(
+                    apply_payload.get("checkpoint_url")
+                    or apply_payload.get("apply_url")
+                    or ""
+                ).strip()
+                link_parts: list[str] = []
+                if checkpoint_url:
+                    link_parts.append(f"[Open Checkpoint]({checkpoint_url})")
+                if job.get("url"):
+                    link_parts.append(f"[View Job Posting]({job['url']})")
+                if link_parts:
+                    st.markdown(" | ".join(link_parts))
+
+                screenshot_path = _existing_path(checkpoint_artifacts.get("screenshot_path"))
+                if screenshot_path is not None:
+                    st.image(
+                        str(screenshot_path),
+                        caption="Latest blocked-page screenshot",
+                        use_container_width=True,
+                    )
+
+                metadata_path = _existing_path(checkpoint_artifacts.get("metadata_path"))
+                html_path = _existing_path(checkpoint_artifacts.get("html_path"))
+                state_path = _existing_path(checkpoint_artifacts.get("storage_state_path"))
+                if metadata_path is not None:
+                    st.caption(f"Checkpoint metadata: {metadata_path}")
+                if html_path is not None:
+                    st.caption(f"Checkpoint HTML: {html_path}")
+                if state_path is not None:
+                    st.caption(f"Checkpoint storage state: {state_path}")
+            elif blocked_reason:
                 st.warning(
                     f"Auto-apply is currently blocked for this job: {apply_payload.get('error') or blocked_reason}"
                 )
@@ -359,7 +434,7 @@ def render_job_detail(job: dict) -> None:
             else:
                 st.info("Auto-apply is live for supported Greenhouse forms.")
 
-        apply_col, auto_col, skip_col, reject_col = st.columns(4)
+        apply_col, auto_col, manual_col = st.columns(3)
         with apply_col:
             if st.button(
                 "Mark as Applied",
@@ -372,7 +447,8 @@ def render_job_detail(job: dict) -> None:
                 st.rerun()
 
         with auto_col:
-            if st.button("Auto Apply Now", use_container_width=True, key=f"auto_{app_id}"):
+            auto_label = "Retry Auto Apply" if blocked_reason or manual_action_required else "Auto Apply Now"
+            if st.button(auto_label, use_container_width=True, key=f"auto_{app_id}"):
                 live_profile = db_ops.get_user_profile()
                 if live_profile is None:
                     st.error("No profile found.")
@@ -395,10 +471,49 @@ def render_job_detail(job: dict) -> None:
                     elif result.success and result.dry_run:
                         log_apply_dry_run(app_id, payload)
                         st.success("Dry run completed without submitting.")
+                    elif result.manual_action_required:
+                        log_apply_manual_action(app_id, result.error or "manual_action_required", payload)
+                        st.warning(result.error or "Manual action is required before the application can continue.")
                     else:
                         log_apply_failure(app_id, result.error or "unknown_auto_apply_error", payload)
                         st.error(result.error or "Auto-apply failed.")
                     st.rerun()
+
+        with manual_col:
+            if st.button(
+                "Open Manual Session",
+                use_container_width=True,
+                key=f"manual_{app_id}",
+                disabled=not manual_action_required,
+            ):
+                with st.spinner("Opening a visible browser for manual completion..."):
+                    result = asyncio.run(resume_manual_auto_apply_job(job))
+                payload = result.model_dump()
+                if result.success and result.submitted:
+                    note = "Application submitted after manual checkpoint."
+                    if result.confirmation_text:
+                        note = f"{note} Confirmation: {result.confirmation_text}"
+                    log_apply_success(app_id, payload, notes=note)
+                    st.success("Manual checkpoint completed and application submitted.")
+                elif result.manual_action_required:
+                    log_apply_manual_action(app_id, result.error or "manual_action_required", payload)
+                    st.warning(result.error or "Manual action is still required.")
+                else:
+                    log_apply_failure(app_id, result.error or "manual_resume_failed", payload)
+                    st.error(result.error or "Manual resume did not reach a confirmation state.")
+                st.rerun()
+
+        reset_col, skip_col, reject_col = st.columns(3)
+        with reset_col:
+            if st.button(
+                "Clear Block",
+                use_container_width=True,
+                key=f"clear_block_{app_id}",
+                disabled=not (blocked_reason or manual_action_required or _is_manual_checkpoint_status(status)),
+            ):
+                clear_apply_block(app_id, notes="Auto-apply block cleared. Ready to retry.")
+                st.success("Cleared the stored block and returned the job to the scored queue.")
+                st.rerun()
 
         with skip_col:
             if st.button("Skip Job", use_container_width=True, key=f"skip_{app_id}"):
@@ -511,6 +626,7 @@ if page == "Dashboard":
                     "": score_icon(score),
                     "Title": job.get("title", ""),
                     "Company": job.get("company", ""),
+                    "Posting": job.get("url", ""),
                     "Source": job.get("source", ""),
                     "Location": job.get("location", ""),
                     "Score": score,
@@ -531,6 +647,13 @@ if page == "Dashboard":
             hide_index=True,
             on_select="rerun",
             selection_mode="single-row",
+            column_config={
+                "Posting": st.column_config.LinkColumn(
+                    "Posting",
+                    help="Open the original job posting",
+                    display_text="Open job",
+                ),
+            },
         )
 
         selected_rows = event.selection.rows
@@ -643,11 +766,34 @@ elif page == "Profile Settings":
         if auto_apply_insights["ready_jobs"]:
             with st.expander("Ready Auto-Apply Jobs", expanded=True):
                 for job in auto_apply_insights["ready_jobs"]:
-                    st.markdown(
-                        f"- {job.get('company', '')} | {job.get('title', '')} | score {job.get('fit_score', '-')}"
+                    posting_url = str(job.get("url") or "").strip()
+                    line = (
+                        f"- {job.get('company', '')} | {job.get('title', '')} | "
+                        f"score {job.get('fit_score', '-')}"
                     )
+                    if posting_url:
+                        line = f"{line} | [job]({posting_url})"
+                    st.markdown(line)
         else:
             st.info("No jobs are currently ready for autonomous submission.")
+
+        if auto_apply_insights["blocked_jobs"]:
+            with st.expander("Manual / Blocked Auto-Apply Jobs"):
+                for item in auto_apply_insights["blocked_jobs"]:
+                    links: list[str] = []
+                    posting_url = str(item.get("posting_url") or "").strip()
+                    apply_url = str(item.get("apply_url") or "").strip()
+                    if posting_url:
+                        links.append(f"[job]({posting_url})")
+                    if apply_url:
+                        links.append(f"[checkpoint]({apply_url})")
+                    suffix = f" | {' | '.join(links)}" if links else ""
+                    st.markdown(
+                        f"- {item.get('job', '')} | {item.get('reason', '')}{suffix}"
+                    )
+                    error = str(item.get("error") or "").strip()
+                    if error:
+                        st.caption(error)
 
         if auto_apply_insights["missing_fields"]:
             with st.expander("Missing Profile Fields", expanded=True):

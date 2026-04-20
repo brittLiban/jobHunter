@@ -35,6 +35,30 @@ _SUBMIT_ERROR_RE = re.compile(
     re.IGNORECASE,
 )
 _LABEL_CLEAN_RE = re.compile(r"[^a-z0-9\s]")
+_CHECKPOINT_DIR_NAME = "manual_checkpoints"
+_EMAIL_CODE_HINTS = (
+    "confirmation code",
+    "verification code",
+    "enter code",
+    "enter the code",
+    "check your email",
+    "check your inbox",
+    "sent a code",
+    "email code",
+    "one time code",
+    "one-time code",
+    "security code",
+)
+_VERIFICATION_HINTS = (
+    "verify your identity",
+    "additional verification",
+    "authentication code",
+    "two factor",
+    "2fa",
+    "multi factor",
+    "verify your email",
+    "verify your phone",
+)
 _KNOWN_PROFILE_FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
     "school_name": ("school", "university", "most recent school you attended"),
     "degree": ("degree", "most recent degree you obtained"),
@@ -117,7 +141,8 @@ class GreenhouseSubmitter(BaseJobSubmitter):
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=config.PLAYWRIGHT_HEADLESS)
-            page = await browser.new_page()
+            context = await browser.new_context(**_context_kwargs_for_job(job))
+            page = await context.new_page()
             try:
                 logger.info("[Apply/Greenhouse] Opening %s", apply_url)
                 await page.goto(apply_url, wait_until="networkidle")
@@ -377,21 +402,23 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                 try:
                     await submit_button.click()
                     confirmation_text = await _wait_for_submission_confirmation(page)
-                except (PlaywrightTimeoutError, TimeoutError) as exc:
-                    captcha_error = await _captcha_block_error(page)
-                    if captcha_error:
-                        return ApplyResult(
+                except (PlaywrightTimeoutError, TimeoutError, ValueError) as exc:
+                    manual_checkpoint = await _detect_manual_checkpoint(
+                        page,
+                        context,
+                        job,
+                        apply_url,
+                        failure_reason=str(exc),
+                    )
+                    if manual_checkpoint is not None:
+                        return _manual_apply_result(
                             source=self.SOURCE_NAME,
                             apply_url=apply_url,
-                            success=False,
-                            submitted=False,
-                            dry_run=False,
-                            retryable=False,
-                            error=captcha_error,
-                            blocked_reason="captcha_required",
+                            dry_run=dry_run,
                             filled_fields=filled_fields,
                             skipped_optional_fields=skipped_optional_fields,
-                            resolver_data=resolver_payload,
+                            resolver_payload=resolver_payload,
+                            checkpoint=manual_checkpoint,
                         )
                     raise exc
                 return ApplyResult(
@@ -406,6 +433,23 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     confirmation_text=confirmation_text,
                 )
             except Exception as exc:
+                manual_checkpoint = await _detect_manual_checkpoint(
+                    page,
+                    context,
+                    job,
+                    apply_url,
+                    failure_reason=str(exc),
+                )
+                if manual_checkpoint is not None:
+                    return _manual_apply_result(
+                        source=self.SOURCE_NAME,
+                        apply_url=apply_url,
+                        dry_run=dry_run,
+                        filled_fields=filled_fields,
+                        skipped_optional_fields=skipped_optional_fields,
+                        resolver_payload=resolver_payload,
+                        checkpoint=manual_checkpoint,
+                    )
                 return ApplyResult(
                     source=self.SOURCE_NAME,
                     apply_url=apply_url,
@@ -420,6 +464,76 @@ class GreenhouseSubmitter(BaseJobSubmitter):
             finally:
                 if temp_cover_letter_path is not None and temp_cover_letter_path.exists():
                     temp_cover_letter_path.unlink(missing_ok=True)
+                await context.close()
+                await browser.close()
+
+    async def resume_manual_checkpoint(self, job: dict) -> ApplyResult:
+        apply_url = build_greenhouse_apply_url(job)
+        payload = _load_json(job.get("apply_data"))
+        checkpoint_url = str(payload.get("checkpoint_url") or payload.get("apply_url") or apply_url or "").strip()
+        if not checkpoint_url:
+            return ApplyResult(
+                source=self.SOURCE_NAME,
+                apply_url=apply_url or "",
+                success=False,
+                submitted=False,
+                dry_run=False,
+                retryable=False,
+                error="No saved manual checkpoint URL is available for this application.",
+                blocked_reason="verification_required",
+            )
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=False)
+            context = await browser.new_context(**_context_kwargs_for_job(job))
+            page = await context.new_page()
+            try:
+                logger.info("[Apply/Greenhouse] Resuming manual checkpoint at %s", checkpoint_url)
+                await page.goto(checkpoint_url, wait_until="networkidle")
+
+                confirmation_text = await _wait_for_manual_completion(page)
+                if confirmation_text:
+                    return ApplyResult(
+                        source=self.SOURCE_NAME,
+                        apply_url=apply_url or checkpoint_url,
+                        success=True,
+                        submitted=True,
+                        dry_run=False,
+                        confirmation_text=confirmation_text,
+                        checkpoint_url=page.url,
+                    )
+
+                manual_checkpoint = await _detect_manual_checkpoint(
+                    page,
+                    context,
+                    job,
+                    apply_url or checkpoint_url,
+                    failure_reason="Manual resume session ended without a confirmation signal.",
+                )
+                if manual_checkpoint is not None:
+                    return _manual_apply_result(
+                        source=self.SOURCE_NAME,
+                        apply_url=apply_url or checkpoint_url,
+                        dry_run=False,
+                        filled_fields=[],
+                        skipped_optional_fields=[],
+                        resolver_payload=None,
+                        checkpoint=manual_checkpoint,
+                    )
+
+                return ApplyResult(
+                    source=self.SOURCE_NAME,
+                    apply_url=apply_url or checkpoint_url,
+                    success=False,
+                    submitted=False,
+                    dry_run=False,
+                    retryable=True,
+                    error="Manual resume session ended without reaching a confirmation state.",
+                    checkpoint_url=page.url,
+                )
+            finally:
+                await _persist_checkpoint_state(context, job)
+                await context.close()
                 await browser.close()
 
 
@@ -709,6 +823,244 @@ def _load_json(raw: object) -> dict:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _context_kwargs_for_job(job: dict) -> dict[str, str]:
+    state_path = _checkpoint_state_path(job)
+    if state_path is not None and state_path.exists():
+        return {"storage_state": str(state_path)}
+    return {}
+
+
+def _checkpoint_root() -> Path:
+    return Path(config.DB_PATH).resolve().parent / _CHECKPOINT_DIR_NAME
+
+
+def _checkpoint_dir(job: dict) -> Path:
+    app_id = job.get("app_id") or "unknown"
+    job_id = job.get("job_id") or job.get("id") or "unknown"
+    return _checkpoint_root() / f"app_{app_id}_job_{job_id}"
+
+
+def _checkpoint_state_path(job: dict) -> Path | None:
+    payload = _load_json(job.get("apply_data"))
+    artifacts = payload.get("checkpoint_artifacts")
+    if isinstance(artifacts, dict):
+        raw_path = str(artifacts.get("storage_state_path") or "").strip()
+        if raw_path:
+            candidate = Path(raw_path)
+            if candidate.exists():
+                return candidate
+
+    fallback = _checkpoint_dir(job) / "storage_state.json"
+    if fallback.exists():
+        return fallback
+    return None
+
+
+async def _persist_checkpoint_state(context, job: dict) -> str | None:
+    directory = _checkpoint_dir(job)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "storage_state.json"
+    try:
+        await context.storage_state(path=str(path))
+    except Exception:
+        return None
+    return str(path.resolve())
+
+
+async def _detect_manual_checkpoint(
+    page: Page,
+    context,
+    job: dict,
+    apply_url: str,
+    failure_reason: str,
+) -> dict[str, object] | None:
+    if page.is_closed():
+        return None
+
+    captcha_error = await _captcha_block_error(page)
+    if captcha_error:
+        return await _capture_manual_checkpoint(
+            page,
+            context,
+            job,
+            apply_url,
+            blocked_reason="captcha_required",
+            manual_action_type="captcha",
+            error=captcha_error,
+            next_step=(
+                "Open a manual resume session from the dashboard, complete the CAPTCHA, "
+                "and then clear the block to retry auto-apply."
+            ),
+            failure_reason=failure_reason,
+        )
+
+    verification_details = await _verification_checkpoint(page, failure_reason)
+    if verification_details is None:
+        return None
+
+    return await _capture_manual_checkpoint(
+        page,
+        context,
+        job,
+        apply_url,
+        blocked_reason=str(verification_details["blocked_reason"]),
+        manual_action_type=str(verification_details["manual_action_type"]),
+        error=str(verification_details["error"]),
+        next_step=str(verification_details["next_step"]),
+        failure_reason=failure_reason,
+    )
+
+
+async def _verification_checkpoint(page: Page, failure_reason: str) -> dict[str, str] | None:
+    try:
+        body_text = await page.locator("body").inner_text()
+    except Exception:
+        body_text = ""
+
+    combined = _normalize_label(
+        " ".join(
+            part
+            for part in (
+                body_text,
+                failure_reason,
+                page.url,
+            )
+            if str(part).strip()
+        )
+    )
+    if not combined:
+        return None
+
+    if any(_normalize_label(marker) in combined for marker in _EMAIL_CODE_HINTS):
+        return {
+            "blocked_reason": "email_code_required",
+            "manual_action_type": "email_code",
+            "error": "The application requires a confirmation or verification code to continue.",
+            "next_step": (
+                "Open a manual resume session from the dashboard, retrieve the emailed code, "
+                "complete the verification prompt, and then clear the block to retry if needed."
+            ),
+        }
+
+    if any(_normalize_label(marker) in combined for marker in _VERIFICATION_HINTS):
+        return {
+            "blocked_reason": "verification_required",
+            "manual_action_type": "verification",
+            "error": "The application requires a manual verification step before it can be submitted.",
+            "next_step": (
+                "Open a manual resume session from the dashboard, complete the verification step, "
+                "and then clear the block to retry if needed."
+            ),
+        }
+
+    return None
+
+
+async def _capture_manual_checkpoint(
+    page: Page,
+    context,
+    job: dict,
+    apply_url: str,
+    *,
+    blocked_reason: str,
+    manual_action_type: str,
+    error: str,
+    next_step: str,
+    failure_reason: str,
+) -> dict[str, object]:
+    directory = _checkpoint_dir(job)
+    directory.mkdir(parents=True, exist_ok=True)
+    checkpoint_url = page.url or apply_url
+    artifacts: dict[str, str] = {}
+
+    screenshot_path = directory / "checkpoint.png"
+    try:
+        await page.screenshot(path=str(screenshot_path), full_page=True)
+        artifacts["screenshot_path"] = str(screenshot_path.resolve())
+    except Exception:
+        pass
+
+    html_path = directory / "checkpoint.html"
+    try:
+        html_path.write_text(await page.content(), encoding="utf-8")
+        artifacts["html_path"] = str(html_path.resolve())
+    except Exception:
+        pass
+
+    text_path = directory / "checkpoint.txt"
+    body_text = ""
+    try:
+        body_text = await page.locator("body").inner_text()
+        text_path.write_text(body_text, encoding="utf-8")
+        artifacts["text_path"] = str(text_path.resolve())
+    except Exception:
+        pass
+
+    state_path = await _persist_checkpoint_state(context, job)
+    if state_path:
+        artifacts["storage_state_path"] = state_path
+
+    metadata = {
+        "blocked_reason": blocked_reason,
+        "manual_action_type": manual_action_type,
+        "error": error,
+        "next_step": next_step,
+        "failure_reason": failure_reason,
+        "checkpoint_url": checkpoint_url,
+        "apply_url": apply_url,
+        "page_text_excerpt": body_text[:1000],
+    }
+    metadata_path = directory / "checkpoint.json"
+    try:
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        artifacts["metadata_path"] = str(metadata_path.resolve())
+    except Exception:
+        pass
+
+    return {
+        "blocked_reason": blocked_reason,
+        "manual_action_type": manual_action_type,
+        "error": error,
+        "next_step": next_step,
+        "checkpoint_url": checkpoint_url,
+        "checkpoint_artifacts": artifacts,
+    }
+
+
+def _manual_apply_result(
+    *,
+    source: str,
+    apply_url: str,
+    dry_run: bool,
+    filled_fields: list[str],
+    skipped_optional_fields: list[str],
+    resolver_payload: dict[str, object] | None,
+    checkpoint: dict[str, object],
+) -> ApplyResult:
+    return ApplyResult(
+        source=source,
+        apply_url=apply_url,
+        success=False,
+        submitted=False,
+        dry_run=dry_run,
+        retryable=False,
+        error=str(checkpoint.get("error") or "manual_action_required"),
+        blocked_reason=str(checkpoint.get("blocked_reason") or "verification_required"),
+        manual_action_required=True,
+        manual_action_type=str(checkpoint.get("manual_action_type") or ""),
+        next_step=str(checkpoint.get("next_step") or ""),
+        checkpoint_url=str(checkpoint.get("checkpoint_url") or apply_url),
+        checkpoint_artifacts=(
+            checkpoint.get("checkpoint_artifacts")
+            if isinstance(checkpoint.get("checkpoint_artifacts"), dict)
+            else None
+        ),
+        filled_fields=filled_fields,
+        skipped_optional_fields=skipped_optional_fields,
+        resolver_data=resolver_payload,
+    )
 
 
 async def _get_required_prompt_texts(page: Page) -> set[str]:
@@ -1025,26 +1377,11 @@ async def _wait_for_submission_confirmation(page: Page) -> str:
     await page.wait_for_timeout(2000)
 
     for _ in range(60):   # 60 * 500 ms = 30 s
-        current_url = page.url
-
-        # Navigation-based success (Stripe redirects to /jobs/*/success)
-        if current_url != original_url:
-            if any(tok in current_url for tok in ("success", "thank", "confirmation", "applied", "complete")):
-                return f"Redirected to {current_url}"
-            # Any navigation away from the apply URL is treated as success
-            if "/apply" in original_url and "/apply" not in current_url:
-                return f"Redirected away from apply page: {current_url}"
+        signal = await _submission_confirmation_signal(page, original_url)
+        if signal:
+            return signal
 
         text = await page.locator("body").inner_text()
-
-        # Explicit success phrase in body
-        match = _SUBMIT_SUCCESS_RE.search(text)
-        if match:
-            return match.group(0)
-
-        # Submit button disappeared → form replaced by confirmation widget
-        if not await page.get_by_role("button", name=re.compile(r"submit application", re.I)).count():
-            return "Application submitted (submit button removed from DOM)"
 
         # Explicit validation error — fail fast so we don't submit a bad form
         if _SUBMIT_ERROR_RE.search(text):
@@ -1053,6 +1390,41 @@ async def _wait_for_submission_confirmation(page: Page) -> str:
         await page.wait_for_timeout(500)
 
     raise TimeoutError("Submit button did not transition to a confirmation state.")
+
+
+async def _wait_for_manual_completion(page: Page, timeout_seconds: int = 900) -> str | None:
+    """Keep a visible browser open while the user completes a manual checkpoint."""
+    original_url = page.url
+    for _ in range(max(1, timeout_seconds * 2)):
+        if page.is_closed():
+            return None
+        signal = await _submission_confirmation_signal(page, original_url)
+        if signal:
+            return signal
+        await page.wait_for_timeout(500)
+    return None
+
+
+async def _submission_confirmation_signal(page: Page, original_url: str) -> str | None:
+    if page.is_closed():
+        return None
+
+    current_url = page.url
+    if current_url != original_url:
+        if any(tok in current_url for tok in ("success", "thank", "confirmation", "applied", "complete")):
+            return f"Redirected to {current_url}"
+        if "/apply" in original_url and "/apply" not in current_url:
+            return f"Redirected away from apply page: {current_url}"
+
+    text = await page.locator("body").inner_text()
+    match = _SUBMIT_SUCCESS_RE.search(text)
+    if match:
+        return match.group(0)
+
+    if not await page.get_by_role("button", name=re.compile(r"submit application", re.I)).count():
+        return "Application submitted (submit button removed from DOM)"
+
+    return None
 
 
 async def _captcha_block_error(page: Page) -> str | None:
