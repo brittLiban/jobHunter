@@ -12,7 +12,7 @@ The behavior should be the same in both cases:
 - run discovery and scoring
 - generate tailoring for high-priority jobs
 - auto-apply eligible Greenhouse jobs
-- repeat every 6 hours when running through `scheduler.py`
+- repeat every 1 hour when running through `scheduler.py`
 
 ## Local Windows Runbook
 
@@ -40,14 +40,14 @@ python main.py
 
 The defaults in [config.py](../config.py) are:
 
-- `SCHEDULER_INTERVAL_HOURS = 6`
+- `SCHEDULER_INTERVAL_HOURS = 1`
 - `AUTO_APPLY_ENABLED = True`
 - `AUTO_APPLY_DRY_RUN = False`
 - `AUTO_APPLY_MIN_SCORE = 80`
 
 The Docker scheduler service in [docker-compose.yml](../docker-compose.yml) also pins:
 
-- `SCHEDULER_INTERVAL_HOURS=6`
+- `SCHEDULER_INTERVAL_HOURS=1`
 - `AUTO_APPLY_ENABLED=true`
 - `AUTO_APPLY_DRY_RUN=false`
 
@@ -212,6 +212,6 @@ print(conn.execute(sql).fetchone()[0])
 - Ollama unavailable: extraction/scoring/tailoring will fail.
 - Playwright browser missing: auto-apply will fail before submission.
 - Resume upload file missing: Greenhouse submission will fail closed.
-- Scheduler not running: nothing happens every 6 hours regardless of config values.
+- Scheduler not running: nothing happens every hour regardless of config values.
 - Unsupported source: the job may be scored and marked as good, but it will not auto-submit.
 - CAPTCHA / reCAPTCHA protection: some forms validate cleanly but still disable submit in automation; these are now reported as blocked rather than retried forever.

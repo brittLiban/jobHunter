@@ -10,7 +10,7 @@ The project has three main runtime surfaces:
 
 ## Current Behavior
 
-- The scheduler interval is `6` hours by default.
+- The scheduler interval is `1` hour by default.
 - Auto-apply is enabled by default.
 - Auto-apply dry-run mode is disabled by default.
 - Only Greenhouse candidate-side application flows are supported for submission today.
@@ -63,7 +63,7 @@ python -m streamlit run dashboard/app.py --server.port 8501
 - `ollama`: local model server
 - `model-pull`: one-time pull for `llama3.1:8b-instruct-q4_K_M`
 - `dashboard`: Streamlit UI on port `8501`
-- `scheduler`: recurring 6-hour pipeline loop with auto-apply enabled
+- `scheduler`: recurring 1-hour pipeline loop with auto-apply enabled
 - `scraper`: one-shot pipeline container for manual runs
 
 Start the long-running services:
@@ -150,6 +150,6 @@ These directories are intentionally ignored by git.
 - Auto-apply support is Greenhouse-only.
 - Some application forms use anti-bot protection such as invisible reCAPTCHA; those are blocked and reported rather than silently retried.
 - External profile upload files are referenced by absolute local paths.
-- The scheduler must be kept running as a process or service if you want continuous 6-hour execution.
+- The scheduler must be kept running as a process or service if you want continuous 1-hour execution.
 
 More operational detail is in [docs/OPERATIONS.md](docs/OPERATIONS.md).

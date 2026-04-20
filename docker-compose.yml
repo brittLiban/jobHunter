@@ -9,7 +9,7 @@ x-app-build: &app-build
     - OLLAMA_URL=http://ollama:11434/api/generate
     - DB_PATH=/app/data/jobs.db
     - JOB_HUNTER_RESUME_ROOT=/resumes
-    - SCHEDULER_INTERVAL_HOURS=6
+    - SCHEDULER_INTERVAL_HOURS=1
     - PLAYWRIGHT_HEADLESS=true
 
 services:
@@ -85,11 +85,11 @@ services:
       - OLLAMA_URL=http://ollama:11434/api/generate
       - DB_PATH=/app/data/jobs.db
       - JOB_HUNTER_RESUME_ROOT=/resumes
-      - SCHEDULER_INTERVAL_HOURS=6
+      - SCHEDULER_INTERVAL_HOURS=1
       - PLAYWRIGHT_HEADLESS=true
       - AUTO_APPLY_ENABLED=true
       - AUTO_APPLY_DRY_RUN=false
-      - AUTO_APPLY_MAX_PER_RUN=2
+      - AUTO_APPLY_MAX_PER_RUN=20
       - JOB_HUNTER_MAX_UNSCORED_JOBS_PER_RUN=4
     restart: unless-stopped
 
