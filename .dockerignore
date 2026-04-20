@@ -13,6 +13,10 @@ dist/
 build/
 .eggs/
 
+# Local dependency stubs (not needed inside the container)
+.deps/
+.pydeps/
+
 # Virtual envs
 .venv
 venv
