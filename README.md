@@ -148,6 +148,7 @@ These directories are intentionally ignored by git.
 ## Known Limits
 
 - Auto-apply support is Greenhouse-only.
+- Some application forms use anti-bot protection such as invisible reCAPTCHA; those are blocked and reported rather than silently retried.
 - External profile upload files are referenced by absolute local paths.
 - The scheduler must be kept running as a process or service if you want continuous 6-hour execution.
 

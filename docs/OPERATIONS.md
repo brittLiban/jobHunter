@@ -214,3 +214,4 @@ print(conn.execute(sql).fetchone()[0])
 - Resume upload file missing: Greenhouse submission will fail closed.
 - Scheduler not running: nothing happens every 6 hours regardless of config values.
 - Unsupported source: the job may be scored and marked as good, but it will not auto-submit.
+- CAPTCHA / reCAPTCHA protection: some forms validate cleanly but still disable submit in automation; these are now reported as blocked rather than retried forever.

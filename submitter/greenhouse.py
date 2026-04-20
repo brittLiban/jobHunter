@@ -174,6 +174,26 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                 else:
                     skipped_optional_fields.append("Cover Letter")
 
+                chosen_location_preferences: list[str] = []
+                for label_text, index in [
+                    ("What is your first location preference?", 0),
+                    ("Second location preference", 1),
+                    ("Third location preference", 2),
+                ]:
+                    if not await _label_exists(page, label_text):
+                        continue
+                    selected_option = await _select_preferred_option(
+                        page,
+                        label_text,
+                        _location_preference_candidates(defaults, index),
+                        exclude=chosen_location_preferences,
+                    )
+                    if not selected_option:
+                        continue
+                    chosen_location_preferences.append(selected_option)
+                    filled_fields.append(label_text)
+                    handled_required_patterns.add(_normalize_label(label_text))
+
                 rules = [
                     # Education
                     _Rule("We are always aiming to keep our school list inclusive", defaults.get("school_name"), "text"),
@@ -197,13 +217,9 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     _Rule("Have you ever been employed by Stripe or a Stripe affiliate?", defaults.get("stripe_employment_history", "No"), "select"),
                     _Rule("Tell us a little bit about you and why you think you would be a good fit", defaults.get("why_fit"), "text"),
                     _Rule("As Stripe grows, we are always aiming to expand our recruitment presence", defaults.get("conference_history"), "text"),
-                    # Location preferences
-                    _Rule("What is your first location preference?", _location_preference(defaults, 0), "select"),
-                    _Rule("Second location preference", _location_preference(defaults, 1), "select"),
-                    _Rule("Third location preference", _location_preference(defaults, 2), "select"),
                     # Work authorization
-                    _Rule("Are you currently eligible to work in the United States?", defaults.get("work_authorization_us_text"), "select"),
-                    _Rule("Do you require visa sponsorship, now or in the future, to continue working in the United States?", defaults.get("requires_sponsorship_text"), "select"),
+                    _Rule("Are you currently eligible to work in the United States?", defaults.get("work_authorization_us") or "Yes", "select"),
+                    _Rule("Do you require visa sponsorship, now or in the future, to continue working in the United States?", defaults.get("requires_sponsorship_now_or_future") or "No", "select"),
                     _Rule("Please select the country where you currently reside.", defaults.get("country") or defaults.get("country_of_citizenship"), "select"),
                     _Rule(
                         "Please select the country or countries you anticipate working in for the role in which you are applying.",
@@ -357,8 +373,27 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                         resolver_data=resolver_payload,
                     )
 
-                await page.get_by_role("button", name=re.compile(r"submit application", re.I)).click()
-                confirmation_text = await _wait_for_submission_confirmation(page)
+                submit_button = page.get_by_role("button", name=re.compile(r"submit application", re.I))
+                try:
+                    await submit_button.click()
+                    confirmation_text = await _wait_for_submission_confirmation(page)
+                except (PlaywrightTimeoutError, TimeoutError) as exc:
+                    captcha_error = await _captcha_block_error(page)
+                    if captcha_error:
+                        return ApplyResult(
+                            source=self.SOURCE_NAME,
+                            apply_url=apply_url,
+                            success=False,
+                            submitted=False,
+                            dry_run=False,
+                            retryable=False,
+                            error=captcha_error,
+                            blocked_reason="captcha_required",
+                            filled_fields=filled_fields,
+                            skipped_optional_fields=skipped_optional_fields,
+                            resolver_data=resolver_payload,
+                        )
+                    raise exc
                 return ApplyResult(
                     source=self.SOURCE_NAME,
                     apply_url=apply_url,
@@ -428,7 +463,9 @@ def _build_form_defaults(job: dict, profile: dict) -> dict:
     _set_if_blank(defaults, "phone", profile.get("phone") or "")
     _set_if_blank(defaults, "resume_path", prefs.get("resume_source_path") or str(config.ACTIVE_RESUME_PATH))
     _set_if_blank(defaults, "phone_country", "United States")
-    _set_if_blank(defaults, "location_city", "Kent, WA")
+    _set_if_blank(defaults, "location_city", "Kent, Washington, United States")
+    if str(defaults.get("location_city") or "").strip().lower() == "kent, wa":
+        defaults["location_city"] = "Kent, Washington, United States"
     _set_if_blank(defaults, "city_state", "Kent, WA")
     _set_if_blank(defaults, "work_location_countries", _work_location_countries(defaults, prefs))
     _set_if_blank(
@@ -564,6 +601,34 @@ def _location_preference(defaults: dict, index: int) -> str | None:
     return str(value).strip() if value else None
 
 
+def _location_preference_candidates(defaults: dict, index: int) -> list[str]:
+    raw_values = defaults.get("location_preferences")
+    if not isinstance(raw_values, list):
+        raw_values = []
+
+    normalized = [
+        str(value).strip()
+        for value in raw_values
+        if str(value).strip()
+    ]
+    ordered = normalized[index:] + normalized[:index]
+    fallbacks = [
+        "Seattle, WA, United States",
+        "San Francisco, CA, United States",
+        "I am open to working in any office",
+    ]
+
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for value in ordered + fallbacks:
+        key = _normalize_label(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        candidates.append(value)
+    return candidates
+
+
 def _work_location_countries(defaults: dict, prefs: dict) -> list[str] | None:
     explicit = defaults.get("work_location_countries")
     if isinstance(explicit, list) and explicit:
@@ -689,15 +754,19 @@ async def _select_option(page: Page, label_text: str, search_text: str) -> None:
     locator = page.locator(_id_selector(field_id))
     await locator.scroll_into_view_if_needed()
     await locator.click()
-    await locator.fill(search_text)
+    if await _click_visible_option(page, field_id, search_text):
+        return
 
-    option = page.locator('[role="option"]').filter(has_text=search_text).first
+    await locator.fill(search_text)
+    await page.wait_for_timeout(800)
+    if await _click_visible_option(page, field_id, search_text):
+        return
+
     try:
-        await option.wait_for(timeout=5000)
-        await option.click()
-    except PlaywrightTimeoutError:
         await page.keyboard.press("ArrowDown")
         await page.keyboard.press("Enter")
+    except PlaywrightTimeoutError:
+        raise ValueError(f"Option not found for {label_text!r}: {search_text!r}")
 
 
 async def _set_group_options(page: Page, legend_text: str, value: object) -> None:
@@ -720,6 +789,36 @@ async def _set_group_options(page: Page, legend_text: str, value: object) -> Non
             await locator.check()
         if input_type == "radio":
             break
+
+
+async def _select_preferred_option(
+    page: Page,
+    label_text: str,
+    candidates: list[str],
+    exclude: list[str] | None = None,
+) -> str | None:
+    exclude_keys = {_normalize_label(value) for value in (exclude or []) if value}
+    field_id = await _get_field_id(page, label_text)
+    locator = page.locator(_id_selector(field_id))
+    await locator.scroll_into_view_if_needed()
+    await locator.click()
+    await page.wait_for_timeout(300)
+
+    option_texts = await _visible_option_texts(page, field_id)
+    option_map = { _normalize_label(text): text for text in option_texts }
+
+    for candidate in candidates:
+        candidate_key = _normalize_label(candidate)
+        if not candidate_key or candidate_key in exclude_keys:
+            continue
+        for option_key, option_text in option_map.items():
+            if option_key in exclude_keys:
+                continue
+            if option_key == candidate_key or candidate_key in option_key:
+                await _click_visible_option(page, field_id, option_text)
+                return option_text
+
+    return None
 
 
 async def _get_field_id(page: Page, label_text: str) -> str:
@@ -854,6 +953,48 @@ async def _find_matching_option_label(fieldset, option_text: str):
     return None
 
 
+async def _visible_option_texts(page: Page, field_id: str) -> list[str]:
+    options = await _option_locator(page, field_id)
+    count = await options.count()
+    texts: list[str] = []
+    for index in range(count):
+        text = _normalize_label((await options.nth(index).inner_text()).strip())
+        if text:
+            texts.append((await options.nth(index).inner_text()).strip())
+    return texts
+
+
+async def _click_visible_option(page: Page, field_id: str, search_text: str) -> bool:
+    query = _normalize_label(search_text)
+    options = await _option_locator(page, field_id)
+    count = await options.count()
+    exact_match = None
+    fuzzy_match = None
+    for index in range(count):
+        option = options.nth(index)
+        text = _normalize_label((await option.inner_text()).strip())
+        if not text:
+            continue
+        if text == query:
+            exact_match = option
+            break
+        if len(query) >= 3 and query in text and fuzzy_match is None:
+            fuzzy_match = option
+    target = exact_match or fuzzy_match
+    if target is None:
+        return False
+    await target.click()
+    return True
+
+
+async def _option_locator(page: Page, field_id: str):
+    input_locator = page.locator(_id_selector(field_id)).first
+    listbox_id = await input_locator.get_attribute("aria-controls")
+    if listbox_id:
+        return page.locator(f"[id={json.dumps(listbox_id)}] [role=\"option\"]")
+    return page.locator('[role="option"]')
+
+
 def _missing_profile_fields_for(unknown_required_fields: list[str], defaults: dict) -> list[str]:
     missing: list[str] = []
     for label in unknown_required_fields:
@@ -912,6 +1053,58 @@ async def _wait_for_submission_confirmation(page: Page) -> str:
         await page.wait_for_timeout(500)
 
     raise TimeoutError("Submit button did not transition to a confirmation state.")
+
+
+async def _captcha_block_error(page: Page) -> str | None:
+    if not await _has_bot_protection(page):
+        return None
+    if not await _form_is_valid(page):
+        return None
+    if not await _submit_button_disabled(page):
+        return None
+    return (
+        "This application is protected by CAPTCHA/reCAPTCHA and cannot be "
+        "completed autonomously in the current Playwright flow."
+    )
+
+
+async def _has_bot_protection(page: Page) -> bool:
+    markers = await page.evaluate(
+        """() => {
+            const iframeSrcs = [...document.querySelectorAll('iframe')]
+                .map(el => (el.getAttribute('src') || '').toLowerCase());
+            const scriptSrcs = [...document.querySelectorAll('script[src]')]
+                .map(el => (el.getAttribute('src') || '').toLowerCase());
+            return [...iframeSrcs, ...scriptSrcs];
+        }"""
+    )
+    if not isinstance(markers, list):
+        return False
+    return any(
+        any(token in str(item) for token in ("recaptcha", "turnstile", "hcaptcha", "arkose"))
+        for item in markers
+    )
+
+
+async def _form_is_valid(page: Page) -> bool:
+    return bool(
+        await page.evaluate(
+            """() => {
+                const form = document.querySelector('form');
+                return form ? form.checkValidity() : false;
+            }"""
+        )
+    )
+
+
+async def _submit_button_disabled(page: Page) -> bool:
+    button = page.get_by_role("button", name=re.compile(r"submit application", re.I))
+    if not await button.count():
+        return False
+    candidate = button.first
+    disabled_attr = await candidate.get_attribute("disabled")
+    aria_disabled = (await candidate.get_attribute("aria-disabled") or "").strip().lower()
+    return disabled_attr is not None or aria_disabled == "true"
 
 
 def _write_temp_text_file(content: str, prefix: str) -> Path:

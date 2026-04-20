@@ -491,7 +491,7 @@ USER_PROFILE: dict = {
             "phone_country": "United States",
             "country": "United States",
             "work_location_countries": ["US"],
-            "location_city": "Kent, WA",
+            "location_city": "Kent, Washington, United States",
             "city_state": "Kent, WA",
             "gender": "male",
             "pronouns": "He/Him",
