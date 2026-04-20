@@ -321,6 +321,7 @@ def _title_case_gender(value: object) -> str | None:
 
 
 def _build_why_fit_text(job: dict, profile: dict) -> str:
+    prefs = profile.get("preferences_json", {})
     tailor_payload = _load_json(job.get("tailor_data"))
     answers = _load_json(tailor_payload.get("answers"))
     answers_result = answers.get("result") if isinstance(answers.get("result"), dict) else answers
@@ -348,12 +349,31 @@ def _build_why_fit_text(job: dict, profile: dict) -> str:
     if parts:
         return "\n\n".join(parts)
 
+    profile_summary = prefs.get("candidate_profile_summary")
+    company_motivation = _company_motivation_for(
+        job.get("company"),
+        prefs.get("company_motivation_overrides"),
+    )
     title = job.get("title") or "this role"
     company = job.get("company") or "your team"
+
+    parts = []
+    if isinstance(profile_summary, str) and profile_summary.strip():
+        parts.append(profile_summary.strip())
+    if company_motivation:
+        parts.append(company_motivation)
+    if parts:
+        parts.append(
+            f"I am interested in {title} at {company} because the role aligns with my "
+            f"background in backend development, testing, CI/CD, and building reliable "
+            f"cloud-deployed software in collaborative engineering environments."
+        )
+        return "\n\n".join(parts)
+
     return (
-        f"I am an entry-level software engineer based in Kent, Washington with hands-on "
-        f"experience from production internships, backend development, testing, and cloud "
-        f"delivery. I am applying to {title} at {company} because the role aligns with my "
+        f"I am a software developer based in Kent, Washington with hands-on experience "
+        f"from production internships, backend development, testing, and cloud delivery. "
+        f"I am interested in {title} at {company} because the role aligns with my "
         f"background in Python, Java, integration work, and building reliable software in "
         f"collaborative engineering environments."
     )
@@ -375,6 +395,20 @@ def _location_preference(defaults: dict, index: int) -> str | None:
         return None
     value = values[index]
     return str(value).strip() if value else None
+
+
+def _company_motivation_for(company: object, overrides: object) -> str | None:
+    if not company or not isinstance(overrides, dict):
+        return None
+
+    company_name = str(company).strip().lower()
+    for key, value in overrides.items():
+        if not key or not value:
+            continue
+        key_name = str(key).strip().lower()
+        if key_name and key_name in company_name:
+            return str(value).strip()
+    return None
 
 
 def _load_json(raw: object) -> dict:

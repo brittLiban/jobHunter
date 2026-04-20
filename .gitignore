@@ -15,3 +15,4 @@ data/*.db-wal
 .streamlit/
 .pytest_cache/
 playwright-report/
+logs/

@@ -173,8 +173,13 @@ def _should_sync_active_resume_variant(existing_preferences: dict, desired_prefe
     if existing_variant != desired_variant:
         return False
 
-    return existing_preferences.get("resume_source_path") != desired_preferences.get(
-        "resume_source_path"
+    return any(
+        (
+            existing_preferences.get("resume_source_path")
+            != desired_preferences.get("resume_source_path"),
+            existing_preferences.get("resume_text_source_path")
+            != desired_preferences.get("resume_text_source_path"),
+        )
     )
 
 

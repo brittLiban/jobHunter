@@ -15,15 +15,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
-from database.db import (
-    get_all_jobs_with_applications,
-    get_distinct_companies,
-    get_distinct_sources,
-    get_stats,
-    get_user_profile,
-    init_db,
-    update_user_profile,
-)
+from database import db as db_ops
 from resume_loader import load_resume_text
 from submitter.service import auto_apply_job
 from tracker.tracker import (
@@ -49,7 +41,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-init_db()
+db_ops.init_db()
 
 if "selected_job_id" not in st.session_state:
     st.session_state.selected_job_id = None
@@ -110,7 +102,7 @@ def load_jobs(
     source_filter: str,
     search: str,
 ) -> list[dict]:
-    rows = get_all_jobs_with_applications()
+    rows = db_ops.get_all_jobs_with_applications()
     jobs = [dict(row) for row in rows]
 
     if status_filter != "All":
@@ -299,7 +291,7 @@ def render_job_detail(job: dict) -> None:
 
         with auto_col:
             if st.button("Auto Apply Now", use_container_width=True, key=f"auto_{app_id}"):
-                live_profile = get_user_profile()
+                live_profile = db_ops.get_user_profile()
                 if live_profile is None:
                     st.error("No profile found.")
                 else:
@@ -396,9 +388,9 @@ with st.sidebar:
     st.subheader("Filters")
     status_filter = st.selectbox("Status", ALL_STATUSES)
     score_range = st.slider("Score Range", 0, 100, (0, 100), step=5)
-    companies = ["All"] + get_distinct_companies()
+    companies = ["All"] + db_ops.get_distinct_companies()
     company_filter = st.selectbox("Company", companies)
-    sources = ["All"] + get_distinct_sources()
+    sources = ["All"] + db_ops.get_distinct_sources()
     source_filter = st.selectbox("Source", sources)
     search_query = st.text_input("Search", placeholder="title or company")
 
@@ -409,7 +401,7 @@ with st.sidebar:
 
 
 if page == "Dashboard":
-    stats = get_stats()
+    stats = db_ops.get_stats()
     stat_cols = st.columns(6)
     stat_cols[0].metric("Total Jobs", stats["total_jobs"])
     stat_cols[1].metric("Scored", stats["total_scored"])
@@ -479,7 +471,7 @@ if page == "Dashboard":
 
 elif page == "Profile Settings":
     st.title("Profile Settings")
-    profile = get_user_profile()
+    profile = db_ops.get_user_profile()
 
     if profile is None:
         st.error("No profile found. Run `python main.py` first to seed the profile.")
@@ -502,20 +494,24 @@ elif page == "Profile Settings":
             format_func=lambda key: str(config.RESUME_VARIANTS[key]["label"]),
         )
         selected_variant = config.RESUME_VARIANTS[selected_variant_key]
-        st.caption(f"Source: {selected_variant['path']}")
+        resume_upload_source = str(selected_variant["path"])
+        resume_text_source = str(selected_variant.get("profile_text_path") or selected_variant["path"])
+        st.caption(f"Resume upload source: {resume_upload_source}")
+        st.caption(f"LLM resume text source: {resume_text_source}")
         st.caption(
             "Target roles: " + ", ".join(selected_variant["target_roles"])  # type: ignore[index]
         )
 
         if st.button("Load Variant Into Profile", use_container_width=True):
             try:
-                loaded_resume_text = load_resume_text(str(selected_variant["path"]))
+                loaded_resume_text = load_resume_text(resume_text_source)
                 updated_preferences = dict(preferences)
                 updated_preferences["resume_variant_key"] = selected_variant_key
                 updated_preferences["resume_variant_label"] = selected_variant["label"]
-                updated_preferences["resume_source_path"] = str(selected_variant["path"])
+                updated_preferences["resume_source_path"] = resume_upload_source
+                updated_preferences["resume_text_source_path"] = resume_text_source
                 updated_preferences["target_roles"] = list(selected_variant["target_roles"])  # type: ignore[index]
-                update_user_profile(
+                db_ops.update_user_profile(
                     resume_text=loaded_resume_text,
                     preferences_json=json.dumps(updated_preferences),
                 )
@@ -573,7 +569,7 @@ elif page == "Profile Settings":
             if submitted:
                 try:
                     parsed_preferences = json.loads(preferences_raw)
-                    update_user_profile(
+                    db_ops.update_user_profile(
                         name=name,
                         email=email,
                         phone=phone,

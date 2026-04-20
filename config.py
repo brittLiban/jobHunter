@@ -214,14 +214,28 @@ DEFAULT_RESUME_ROOT = Path(
         r"C:\Users\liban\Desktop\01_Career\Resumes",
     )
 )
+PROFILE_TEXT_ROOT = Path(__file__).parent / "profiles"
 
 
 def _resume_path(filename: str) -> str:
     return str(DEFAULT_RESUME_ROOT / filename)
 
+
+def _profile_text_path(filename: str) -> str:
+    return str(PROFILE_TEXT_ROOT / filename)
+
+
+def _variant_resume_text_path(variant: dict[str, object]) -> Path:
+    profile_text_path = variant.get("profile_text_path")
+    if profile_text_path:
+        return Path(str(profile_text_path))
+    return Path(str(variant["path"]))
+
+
 PREFERRED_LOCATIONS: list[str] = [
     "remote",
     "kent",
+    "tukwila",
     "seattle",
     "bellevue",
     "redmond",
@@ -300,7 +314,8 @@ DISCOVERY_MAX_JOB_URLS_PER_COMPANY: int = int(
 RESUME_VARIANTS: dict[str, dict[str, object]] = {
     "software_engineer": {
         "label": "Software Engineer",
-        "path": _resume_path("Liban_Britt_SWE.docx"),
+        "path": _resume_path("Liban_Britt_SWE_Current.docx"),
+        "profile_text_path": _profile_text_path("liban_britt_software_engineer.md"),
         "target_roles": [
             "software engineer",
             "backend engineer",
@@ -400,6 +415,7 @@ if ACTIVE_RESUME_KEY not in RESUME_VARIANTS:
 
 ACTIVE_RESUME = RESUME_VARIANTS[ACTIVE_RESUME_KEY]
 ACTIVE_RESUME_PATH = Path(str(ACTIVE_RESUME["path"]))
+ACTIVE_RESUME_TEXT_PATH = _variant_resume_text_path(ACTIVE_RESUME)
 TARGET_ROLES: list[str] = list(ACTIVE_RESUME["target_roles"])  # type: ignore[arg-type]
 
 
@@ -434,7 +450,7 @@ USER_PROFILE: dict = {
     "name": "Liban Britt",
     "email": "liban3367@gmail.com",
     "phone": "2534864028",
-    "resume_text": load_resume_text(ACTIVE_RESUME_PATH),
+    "resume_text": load_resume_text(ACTIVE_RESUME_TEXT_PATH),
     "preferences_json": {
         "preferred_locations": PREFERRED_LOCATIONS,
         "target_roles": TARGET_ROLES,
@@ -448,7 +464,21 @@ USER_PROFILE: dict = {
         "resume_variant_key": ACTIVE_RESUME_KEY,
         "resume_variant_label": ACTIVE_RESUME["label"],
         "resume_source_path": str(ACTIVE_RESUME_PATH),
+        "resume_text_source_path": str(ACTIVE_RESUME_TEXT_PATH),
         "citizenship": "U.S. Citizen",
+        "candidate_profile_summary": (
+            "Software developer with two production internships and three years of "
+            "hands-on engineering experience building enterprise-class software, "
+            "data pipelines, and cloud-deployed systems. Strong OOP fundamentals "
+            "in Java, Python, and JavaScript with experience in testing, "
+            "debugging, CI/CD, and collaborative development. Local to Kent, WA."
+        ),
+        "company_motivation_overrides": {
+            "becu": (
+                "I grew up in this community and care about the kind of financial "
+                "access and equity work BECU does."
+            ),
+        },
         "application_form_defaults": {
             "first_name": "Liban",
             "last_name": "Britt",
@@ -465,24 +495,24 @@ USER_PROFILE: dict = {
             "disability_status": "No, I do not have a disability and have not had one in the past",
             "work_authorization_us": "Yes",
             "requires_sponsorship_now_or_future": "No",
-            "current_or_previous_employer": "TekCare LLC",
-            "current_or_previous_job_title": "Lead Software Engineer",
-            "school_name": "University of Washington",
-            "degree": "B.A.S. Software Development & Data Analytics",
-            "gpa": "3.8",
+            "current_or_previous_employer": "GE Vernova",
+            "current_or_previous_job_title": "Software / Data Engineering Intern",
+            "school_name": "",
+            "degree": "",
+            "gpa": "",
             "links": "LinkedIn: https://linkedin.com/in/liban-britt-3981a587 | GitHub: https://github.com/brittLiban",
             "location_preferences": [
+                "Tukwila, WA, United States",
                 "Seattle, WA, United States",
                 "Bellevue, WA, United States",
-                "Redmond, WA, United States",
             ],
             "self_identification_acknowledgement": "I understand that self-identification is voluntary.",
             "hispanic_ethnicity": "",
             "conference_history": "",
             # Education details (needed for intern/new-grad forms)
-            "discipline": "Software Development & Data Analytics",
-            "graduation_year": "2025",
-            "start_date_year": "2025",
+            "discipline": "",
+            "graduation_year": "",
+            "start_date_year": "",
             "sat_act_score": "",
             # Stripe-specific
             "stripe_employment_history": "No",
