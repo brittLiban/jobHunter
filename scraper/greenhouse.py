@@ -1,5 +1,5 @@
 """
-scraper/greenhouse.py — Scraper for the Greenhouse public job board API.
+scraper/greenhouse.py - Scraper for the Greenhouse public job board API.
 
 API docs: https://developers.greenhouse.io/job-board.html
 Endpoint: GET https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true
@@ -31,11 +31,11 @@ class GreenhouseScraper(BaseJobScraper):
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 logger.error(
-                    "[Greenhouse] %s → HTTP %s", company_slug, exc.response.status_code
+                    "[Greenhouse] %s -> HTTP %s", company_slug, exc.response.status_code
                 )
                 return []
             except httpx.RequestError as exc:
-                logger.error("[Greenhouse] %s → request error: %s", company_slug, exc)
+                logger.error("[Greenhouse] %s -> request error: %s", company_slug, exc)
                 return []
 
         data = resp.json()
@@ -69,7 +69,7 @@ class GreenhouseScraper(BaseJobScraper):
         }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# Helpers
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s{2,}")

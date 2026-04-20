@@ -471,7 +471,10 @@ USER_PROFILE: dict = {
             "hands-on engineering experience building enterprise-class software, "
             "data pipelines, and cloud-deployed systems. Strong OOP fundamentals "
             "in Java, Python, and JavaScript with experience in testing, "
-            "debugging, CI/CD, and collaborative development. Local to Kent, WA."
+            "debugging, CI/CD, and collaborative development. Local to Kent, WA "
+            "and within easy commuting distance of Tukwila, Seattle, Bellevue, "
+            "and Redmond. Drawn to mission-driven organizations and "
+            "community-centered technology work."
         ),
         "company_motivation_overrides": {
             "becu": (
@@ -487,6 +490,7 @@ USER_PROFILE: dict = {
             "phone": "2534864028",
             "phone_country": "United States",
             "country": "United States",
+            "work_location_countries": ["US"],
             "location_city": "Kent, WA",
             "city_state": "Kent, WA",
             "gender": "male",
@@ -497,9 +501,24 @@ USER_PROFILE: dict = {
             "requires_sponsorship_now_or_future": "No",
             "current_or_previous_employer": "GE Vernova",
             "current_or_previous_job_title": "Software / Data Engineering Intern",
+            "plans_remote_if_available": "Yes",
+            "whatsapp_recruiting_opt_in": "No",
             "school_name": "",
             "degree": "",
             "gpa": "",
+            "current_twitch_employee": "No",
+            "current_amazon_employee": "No",
+            "previous_company_application": "",
+            "previous_amazon_employment": "Yes",
+            "open_to_relocation": "",
+            "future_opportunities_opt_in": "",
+            "non_compete_restriction": "",
+            "held_h1b_last_6_years": "",
+            "familiar_with_company": "",
+            "legally_eligible_to_begin_immediately": "Yes",
+            "needs_immigration_support_amazon": "No",
+            "country_of_citizenship": "United States",
+            "custom_question_answers": [],
             "links": "LinkedIn: https://linkedin.com/in/liban-britt-3981a587 | GitHub: https://github.com/brittLiban",
             "location_preferences": [
                 "Tukwila, WA, United States",

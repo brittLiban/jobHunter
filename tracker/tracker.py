@@ -130,13 +130,15 @@ def log_apply_failure(
     The application stays in the scored queue so the user can retry manually
     after adjusting profile defaults or fixing site-specific issues.
     """
+    retryable = bool(apply_payload.get("retryable", True))
+    note_prefix = "Auto-apply failed" if retryable else "Auto-apply blocked"
     update_application(
         app_id,
         status="scored",
-        notes=f"Auto-apply failed: {reason}",
+        notes=f"{note_prefix}: {reason}",
         **_encode_payloads(apply_data=apply_payload),
     )
-    logger.info("[Tracker] app=%d auto-apply failed - %s", app_id, reason)
+    logger.info("[Tracker] app=%d %s - %s", app_id, note_prefix.lower(), reason)
 
 
 def log_apply_dry_run(app_id: int, apply_payload: dict) -> None:

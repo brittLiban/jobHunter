@@ -19,6 +19,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import Page, async_playwright
 
 import config
+from llm.form_resolver import resolve_form_questions
 from .base import ApplyResult, BaseJobSubmitter
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,48 @@ _SUBMIT_ERROR_RE = re.compile(
     r"(please fix|there (was|were) (an? )?error|field is required|invalid)",
     re.IGNORECASE,
 )
+_LABEL_CLEAN_RE = re.compile(r"[^a-z0-9\s]")
+_KNOWN_PROFILE_FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
+    "school_name": ("school", "university", "most recent school you attended"),
+    "degree": ("degree", "most recent degree you obtained"),
+    "discipline": ("discipline", "field of study", "major"),
+    "gpa": ("gpa",),
+    "start_date_year": ("start date year",),
+    "graduation_year": (
+        "expected graduation year",
+        "graduation year",
+        "anticipated graduation year",
+        "expected graduation date",
+    ),
+    "why_fit": ("tell us a little bit about you and why you think you would be a good fit",),
+    "country": ("country where you currently reside",),
+    "work_location_countries": ("country or countries you anticipate working in",),
+    "work_authorization_us": (
+        "authorized to work in the location s you selected",
+        "authorized to work in the location you selected",
+    ),
+    "requires_sponsorship_now_or_future": (
+        "require stripe to sponsor you for a work permit",
+    ),
+    "plans_remote_if_available": ("plan to work remotely",),
+    "whatsapp_recruiting_opt_in": ("whatsapp messages from stripe recruiting",),
+    "current_or_previous_employer": ("current or previous employer",),
+    "current_or_previous_job_title": ("current or previous job title",),
+    "country_of_citizenship": ("country region do you have citizenship", "country of citizenship"),
+    "current_twitch_employee": ("currently a twitch employee",),
+    "current_amazon_employee": ("current employee with amazon",),
+    "previous_amazon_employment": ("previously been employed by amazon",),
+    "legally_eligible_to_begin_immediately": ("legally eligible to begin employment immediately",),
+    "needs_immigration_support_amazon": (
+        "immigration related support or sponsorship from amazon",
+    ),
+    "previous_company_application": ("previously applied to",),
+    "open_to_relocation": ("open to relocation",),
+    "future_opportunities_opt_in": ("considered for future opportunities",),
+    "non_compete_restriction": ("subject to a non competition agreement", "subject to a non-competition agreement"),
+    "held_h1b_last_6_years": ("held h 1b status", "held h-1b status"),
+    "familiar_with_company": ("familiar with",),
+}
 
 
 class GreenhouseSubmitter(BaseJobSubmitter):
@@ -70,6 +113,7 @@ class GreenhouseSubmitter(BaseJobSubmitter):
         filled_fields: list[str] = []
         skipped_optional_fields: list[str] = []
         temp_cover_letter_path: Path | None = None
+        resolver_payload: dict[str, object] | None = None
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=config.PLAYWRIGHT_HEADLESS)
@@ -78,7 +122,7 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                 logger.info("[Apply/Greenhouse] Opening %s", apply_url)
                 await page.goto(apply_url, wait_until="networkidle")
 
-                required_labels = await _get_required_label_texts(page)
+                required_labels = await _get_required_prompt_texts(page)
                 handled_required_patterns: set[str] = set()
 
                 await _fill_text_field(page, "First Name", defaults["first_name"])
@@ -160,10 +204,47 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     # Work authorization
                     _Rule("Are you currently eligible to work in the United States?", defaults.get("work_authorization_us_text"), "select"),
                     _Rule("Do you require visa sponsorship, now or in the future, to continue working in the United States?", defaults.get("requires_sponsorship_text"), "select"),
+                    _Rule("Please select the country where you currently reside.", defaults.get("country") or defaults.get("country_of_citizenship"), "select"),
+                    _Rule(
+                        "Please select the country or countries you anticipate working in for the role in which you are applying.",
+                        defaults.get("work_location_countries"),
+                        "checkbox",
+                    ),
+                    _Rule(
+                        "Are you authorized to work in the location(s) you selected in your previous response?",
+                        defaults.get("work_authorization_us") or "Yes",
+                        "select",
+                    ),
+                    _Rule(
+                        "Will you require Stripe to sponsor you for a work permit now or in the future for the location(s) you selected in in your previous response?",
+                        defaults.get("requires_sponsorship_now_or_future") or "No",
+                        "select",
+                    ),
+                    _Rule(
+                        "If this role offers the option to work from a remote location, do you plan to work remotely?",
+                        defaults.get("plans_remote_if_available"),
+                        "select",
+                    ),
                     # Employment history
                     _Rule("Who is your current or previous employer?", defaults.get("current_or_previous_employer"), "text"),
                     _Rule("What is your current or previous job title?", defaults.get("current_or_previous_job_title"), "text"),
+                    _Rule("What is the most recent school you attended?", defaults.get("school_name"), "text"),
+                    _Rule("What is the most recent degree you obtained?", defaults.get("degree"), "text"),
+                    _Rule("Do you opt-in to receive WhatsApp messages from Stripe Recruiting?", defaults.get("whatsapp_recruiting_opt_in"), "select"),
                     _Rule("If located in the US, in what city and state do you reside?", defaults.get("city_state"), "text"),
+                    # Amazon / Twitch custom questions
+                    _Rule("Are you currently a Twitch employee?", defaults.get("current_twitch_employee"), "select"),
+                    _Rule("Are you a current employee with Amazon or any Amazon subsidiary", defaults.get("current_amazon_employee"), "select"),
+                    _Rule("Have you previously applied to Amazon or any Amazon subsidiary", defaults.get("previous_company_application"), "select"),
+                    _Rule("Have you previously been employed by Amazon or any Amazon subsidiary", defaults.get("previous_amazon_employment"), "select"),
+                    _Rule("Are you open to relocation?", defaults.get("open_to_relocation"), "select"),
+                    _Rule("Would you like to be considered for future opportunities", defaults.get("future_opportunities_opt_in"), "select"),
+                    _Rule("Are you subject to a non-competition agreement", defaults.get("non_compete_restriction"), "select"),
+                    _Rule("Have you held H-1B status", defaults.get("held_h1b_last_6_years"), "select"),
+                    _Rule("Are you familiar with", defaults.get("familiar_with_company"), "select"),
+                    _Rule("If offered employment by Amazon, would you be legally eligible to begin employment immediately?", defaults.get("legally_eligible_to_begin_immediately"), "select"),
+                    _Rule("immigration related support or sponsorship from Amazon", defaults.get("needs_immigration_support_amazon"), "select"),
+                    _Rule("In which country/region do you have citizenship?", defaults.get("country_of_citizenship"), "select"),
                     # EEO / self-ID
                     _Rule("Self-identification is voluntary. Please acknowledge this in the drop down below.", defaults.get("self_identification_acknowledgement"), "select"),
                     _Rule("Gender", defaults.get("gender_text"), "select"),
@@ -171,15 +252,22 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     _Rule("Veteran Status", defaults.get("veteran_status"), "select"),
                     _Rule("Disability Status", defaults.get("disability_status"), "select"),
                 ]
+                rules.extend(_custom_rules_from_defaults(defaults))
 
                 for rule in rules:
                     if not rule.value:
                         continue
-                    if not await _label_exists(page, rule.label):
-                        continue
-                    if rule.kind == "select":
+                    if rule.kind == "checkbox":
+                        if not await _fieldset_exists(page, rule.label):
+                            continue
+                        await _set_group_options(page, rule.label, rule.value)
+                    elif rule.kind == "select":
+                        if not await _label_exists(page, rule.label):
+                            continue
                         await _select_option(page, rule.label, str(rule.value))
                     else:
+                        if not await _label_exists(page, rule.label):
+                            continue
                         await _fill_text_field(page, rule.label, str(rule.value))
                     filled_fields.append(rule.label)
                     handled_required_patterns.add(_normalize_label(rule.label))
@@ -189,17 +277,72 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     for label in required_labels
                     if not any(pattern in label for pattern in handled_required_patterns)
                 )
+                resolver_candidates = [
+                    label
+                    for label in unknown_required_fields
+                    if not (
+                        (field_key := _matching_profile_field_key(label))
+                        and not defaults.get(field_key)
+                    )
+                ]
+                if resolver_candidates:
+                    resolver_result, resolver_payload = await resolve_form_questions(
+                        resolver_candidates,
+                        defaults,
+                        job,
+                        profile,
+                    )
+                    if resolver_result is not None:
+                        for resolution in resolver_result.resolutions:
+                            if not resolution.safe_to_autofill or not resolution.answer:
+                                continue
+                            if not await _label_exists(page, resolution.label):
+                                continue
+                            field_kind = await _field_kind(page, resolution.label)
+                            if field_kind == "select":
+                                await _select_option(page, resolution.label, resolution.answer)
+                            elif field_kind == "text":
+                                await _fill_text_field(page, resolution.label, resolution.answer)
+                            else:
+                                continue
+                            filled_fields.append(resolution.label)
+                            handled_required_patterns.add(_normalize_label(resolution.label))
+
+                        unknown_required_fields = sorted(
+                            label
+                            for label in required_labels
+                            if not any(pattern in label for pattern in handled_required_patterns)
+                        )
                 if unknown_required_fields:
+                    missing_profile_fields = _missing_profile_fields_for(
+                        unknown_required_fields,
+                        defaults,
+                    )
+                    blocked_reason = (
+                        "missing_profile_fields"
+                        if missing_profile_fields
+                        else "unknown_required_fields"
+                    )
+                    error = (
+                        "Missing required profile fields: "
+                        + ", ".join(missing_profile_fields)
+                        if missing_profile_fields
+                        else "Unknown required application fields remain."
+                    )
                     return ApplyResult(
                         source=self.SOURCE_NAME,
                         apply_url=apply_url,
                         success=False,
                         submitted=False,
                         dry_run=dry_run,
-                        error="Unknown required application fields remain.",
+                        retryable=False,
+                        error=error,
+                        blocked_reason=blocked_reason,
                         filled_fields=filled_fields,
                         skipped_optional_fields=skipped_optional_fields,
                         unknown_required_fields=unknown_required_fields,
+                        missing_profile_fields=missing_profile_fields,
+                        resolver_data=resolver_payload,
                     )
 
                 if dry_run:
@@ -211,6 +354,7 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                         dry_run=True,
                         filled_fields=filled_fields,
                         skipped_optional_fields=skipped_optional_fields,
+                        resolver_data=resolver_payload,
                     )
 
                 await page.get_by_role("button", name=re.compile(r"submit application", re.I)).click()
@@ -223,6 +367,7 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     dry_run=False,
                     filled_fields=filled_fields,
                     skipped_optional_fields=skipped_optional_fields,
+                    resolver_data=resolver_payload,
                     confirmation_text=confirmation_text,
                 )
             except Exception as exc:
@@ -235,6 +380,7 @@ class GreenhouseSubmitter(BaseJobSubmitter):
                     error=str(exc),
                     filled_fields=filled_fields,
                     skipped_optional_fields=skipped_optional_fields,
+                    resolver_data=resolver_payload,
                 )
             finally:
                 if temp_cover_letter_path is not None and temp_cover_letter_path.exists():
@@ -243,7 +389,7 @@ class GreenhouseSubmitter(BaseJobSubmitter):
 
 
 class _Rule:
-    def __init__(self, label: str, value: str | None, kind: str) -> None:
+    def __init__(self, label: str, value: object | None, kind: str) -> None:
         self.label = label
         self.value = value
         self.kind = kind
@@ -275,26 +421,47 @@ def _build_form_defaults(job: dict, profile: dict) -> dict:
     prefs = profile.get("preferences_json", {})
     defaults = dict(prefs.get("application_form_defaults") or {})
     first_name, last_name = _split_name(profile.get("name") or "")
-    defaults.setdefault("first_name", first_name)
-    defaults.setdefault("last_name", last_name)
-    defaults.setdefault("preferred_name", first_name)
-    defaults.setdefault("email", profile.get("email") or "")
-    defaults.setdefault("phone", profile.get("phone") or "")
-    defaults.setdefault("resume_path", prefs.get("resume_source_path") or str(config.ACTIVE_RESUME_PATH))
-    defaults.setdefault("phone_country", "United States")
-    defaults.setdefault("location_city", "Kent, WA")
-    defaults.setdefault("city_state", "Kent, WA")
-    defaults.setdefault(
+    _set_if_blank(defaults, "first_name", first_name)
+    _set_if_blank(defaults, "last_name", last_name)
+    _set_if_blank(defaults, "preferred_name", first_name)
+    _set_if_blank(defaults, "email", profile.get("email") or "")
+    _set_if_blank(defaults, "phone", profile.get("phone") or "")
+    _set_if_blank(defaults, "resume_path", prefs.get("resume_source_path") or str(config.ACTIVE_RESUME_PATH))
+    _set_if_blank(defaults, "phone_country", "United States")
+    _set_if_blank(defaults, "location_city", "Kent, WA")
+    _set_if_blank(defaults, "city_state", "Kent, WA")
+    _set_if_blank(defaults, "work_location_countries", _work_location_countries(defaults, prefs))
+    _set_if_blank(
+        defaults,
         "work_authorization_us_text",
         "Yes, I am currently eligible to work in the country where this role is based.",
     )
-    defaults.setdefault(
+    _set_if_blank(
+        defaults,
         "requires_sponsorship_text",
         "No, I do not require visa sponsorship now or in the future to continue working in the country where this role is based.",
     )
-    defaults.setdefault("gender_text", _title_case_gender(defaults.get("gender")))
-    defaults.setdefault("stripe_employment_history", "No")
-    defaults.setdefault("why_fit", _build_why_fit_text(job, profile))
+    _set_if_blank(defaults, "gender_text", _title_case_gender(defaults.get("gender")))
+    _set_if_blank(defaults, "stripe_employment_history", "No")
+    _set_if_blank(defaults, "plans_remote_if_available", _remote_work_preference(prefs))
+    _set_if_blank(defaults, "whatsapp_recruiting_opt_in", "No")
+    _set_if_blank(
+        defaults,
+        "country_of_citizenship",
+        defaults.get("country") or prefs.get("citizenship") or "United States",
+    )
+    _set_if_blank(defaults, "current_twitch_employee", "No")
+    _set_if_blank(defaults, "current_amazon_employee", "No")
+    _set_if_blank(defaults, "previous_company_application", "")
+    _set_if_blank(defaults, "previous_amazon_employment", "Yes")
+    _set_if_blank(defaults, "open_to_relocation", "")
+    _set_if_blank(defaults, "future_opportunities_opt_in", "")
+    _set_if_blank(defaults, "non_compete_restriction", "")
+    _set_if_blank(defaults, "held_h1b_last_6_years", "")
+    _set_if_blank(defaults, "familiar_with_company", "")
+    _set_if_blank(defaults, "legally_eligible_to_begin_immediately", "Yes")
+    _set_if_blank(defaults, "needs_immigration_support_amazon", "No")
+    _set_if_blank(defaults, "why_fit", _build_why_fit_text(job, profile))
     return defaults
 
 
@@ -397,6 +564,62 @@ def _location_preference(defaults: dict, index: int) -> str | None:
     return str(value).strip() if value else None
 
 
+def _work_location_countries(defaults: dict, prefs: dict) -> list[str] | None:
+    explicit = defaults.get("work_location_countries")
+    if isinstance(explicit, list) and explicit:
+        return [str(item).strip() for item in explicit if str(item).strip()]
+
+    country = str(
+        defaults.get("country")
+        or defaults.get("country_of_citizenship")
+        or prefs.get("citizenship")
+        or ""
+    ).strip().lower()
+    mapping = {
+        "united states": ["US"],
+        "u.s. citizen": ["US"],
+        "us": ["US"],
+    }
+    return mapping.get(country)
+
+
+def _remote_work_preference(prefs: dict) -> str:
+    preferred_locations = [
+        str(item).strip().lower()
+        for item in (prefs.get("preferred_locations") or [])
+        if str(item).strip()
+    ]
+    return "Yes" if "remote" in preferred_locations else "No"
+
+
+def _set_if_blank(defaults: dict, key: str, value: object) -> None:
+    if defaults.get(key):
+        return
+    if value is None:
+        return
+    defaults[key] = value
+
+
+def _custom_rules_from_defaults(defaults: dict) -> list[_Rule]:
+    raw_rules = defaults.get("custom_question_answers")
+    if not isinstance(raw_rules, list):
+        return []
+
+    rules: list[_Rule] = []
+    for item in raw_rules:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        value = item.get("value")
+        kind = str(item.get("kind") or "text").strip().lower()
+        if not label or value in {None, ""}:
+            continue
+        if kind not in {"text", "select"}:
+            continue
+        rules.append(_Rule(label, str(value), kind))
+    return rules
+
+
 def _company_motivation_for(company: object, overrides: object) -> str | None:
     if not company or not isinstance(overrides, dict):
         return None
@@ -423,31 +646,37 @@ def _load_json(raw: object) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-async def _get_required_label_texts(page: Page) -> set[str]:
-    labels = page.locator("label")
-    count = await labels.count()
+async def _get_required_prompt_texts(page: Page) -> set[str]:
     required: set[str] = set()
-    for index in range(count):
-        text = (await labels.nth(index).inner_text()).strip()
-        if "*" not in text:
-            continue
-        required.add(_normalize_label(text))
+    for selector in ("label", "legend"):
+        prompts = page.locator(selector)
+        count = await prompts.count()
+        for index in range(count):
+            text = (await prompts.nth(index).inner_text()).strip()
+            if "*" not in text:
+                continue
+            required.add(_normalize_label(text))
     return required
 
 
 def _normalize_label(text: str) -> str:
-    return re.sub(r"\s+", " ", text.replace("*", "")).strip().lower()
+    cleaned = _LABEL_CLEAN_RE.sub(" ", text.replace("*", "").lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 async def _label_exists(page: Page, label_text: str) -> bool:
-    return await page.locator("label").filter(has_text=label_text).count() > 0
+    return await _find_matching_label(page, label_text) is not None
+
+
+async def _fieldset_exists(page: Page, legend_text: str) -> bool:
+    return await _find_matching_legend(page, legend_text) is not None
 
 
 async def _fill_text_field(page: Page, label_text: str, value: str) -> None:
     if not value:
         return
     field_id = await _get_field_id(page, label_text)
-    locator = page.locator(f"#{field_id}")
+    locator = page.locator(_id_selector(field_id))
     await locator.scroll_into_view_if_needed()
     await locator.click()
     await locator.fill(value)
@@ -457,7 +686,7 @@ async def _select_option(page: Page, label_text: str, search_text: str) -> None:
     if not search_text:
         return
     field_id = await _get_field_id(page, label_text)
-    locator = page.locator(f"#{field_id}")
+    locator = page.locator(_id_selector(field_id))
     await locator.scroll_into_view_if_needed()
     await locator.click()
     await locator.fill(search_text)
@@ -471,15 +700,176 @@ async def _select_option(page: Page, label_text: str, search_text: str) -> None:
         await page.keyboard.press("Enter")
 
 
+async def _set_group_options(page: Page, legend_text: str, value: object) -> None:
+    values = _as_choice_list(value)
+    if not values:
+        return
+
+    fieldset = await _get_fieldset_locator(page, legend_text)
+    input_type = await fieldset.locator("input").first.get_attribute("type")
+    for option_text in values:
+        option = await _find_matching_option_label(fieldset, option_text)
+        if option is None:
+            raise ValueError(f"Option label not found for {legend_text!r}: {option_text!r}")
+        field_id = await option.get_attribute("for")
+        if not field_id:
+            raise ValueError(f"Option label missing target for {legend_text!r}: {option_text!r}")
+        locator = fieldset.locator(_id_selector(field_id)).first
+        await locator.scroll_into_view_if_needed()
+        if not await locator.is_checked():
+            await locator.check()
+        if input_type == "radio":
+            break
+
+
 async def _get_field_id(page: Page, label_text: str) -> str:
-    label = page.locator("label").filter(has_text=label_text).first
-    count = await label.count()
-    if count == 0:
+    label = await _find_matching_label(page, label_text)
+    if label is None:
         raise ValueError(f"Field label not found: {label_text}")
     field_id = await label.get_attribute("for")
     if not field_id:
         raise ValueError(f"Field label does not reference an input: {label_text}")
     return field_id
+
+
+async def _field_kind(page: Page, label_text: str) -> str:
+    field_id = await _get_field_id(page, label_text)
+    locator = page.locator(_id_selector(field_id)).first
+    metadata = await locator.evaluate(
+        """element => ({
+            tagName: (element.tagName || '').toLowerCase(),
+            type: (element.getAttribute('type') || '').toLowerCase(),
+            role: (element.getAttribute('role') || '').toLowerCase(),
+            ariaHaspopup: (element.getAttribute('aria-haspopup') || '').toLowerCase(),
+            ariaAutocomplete: (element.getAttribute('aria-autocomplete') || '').toLowerCase()
+        })"""
+    )
+    if metadata["tagName"] == "select":
+        return "select"
+    if metadata["type"] == "checkbox":
+        return "checkbox"
+    if metadata["type"] == "radio":
+        return "radio"
+    if metadata["role"] == "combobox":
+        return "select"
+    if metadata["ariaHaspopup"] == "listbox":
+        return "select"
+    if metadata["ariaAutocomplete"] in {"list", "both"}:
+        return "select"
+    return "text"
+
+
+async def _find_matching_label(page: Page, label_text: str):
+    labels = page.locator("label")
+    count = await labels.count()
+    query = _normalize_label(label_text)
+
+    exact_matches = []
+    fuzzy_matches = []
+    for index in range(count):
+        candidate = labels.nth(index)
+        text = _normalize_label((await candidate.inner_text()).strip())
+        if not text:
+            continue
+        if text == query:
+            exact_matches.append(candidate)
+            continue
+        if len(query) >= 10 and query in text:
+            fuzzy_matches.append(candidate)
+
+    if exact_matches:
+        return exact_matches[0]
+    if fuzzy_matches:
+        return fuzzy_matches[0]
+    return None
+
+
+async def _find_matching_legend(page: Page, legend_text: str):
+    legends = page.locator("legend")
+    count = await legends.count()
+    query = _normalize_label(legend_text)
+
+    exact_matches = []
+    fuzzy_matches = []
+    for index in range(count):
+        candidate = legends.nth(index)
+        text = _normalize_label((await candidate.inner_text()).strip())
+        if not text:
+            continue
+        if text == query:
+            exact_matches.append(candidate)
+            continue
+        if len(query) >= 10 and query in text:
+            fuzzy_matches.append(candidate)
+
+    if exact_matches:
+        return exact_matches[0]
+    if fuzzy_matches:
+        return fuzzy_matches[0]
+    return None
+
+
+async def _get_fieldset_locator(page: Page, legend_text: str):
+    legend = await _find_matching_legend(page, legend_text)
+    if legend is None:
+        raise ValueError(f"Fieldset legend not found: {legend_text}")
+    return legend.locator("xpath=ancestor::fieldset[1]")
+
+
+def _id_selector(field_id: str) -> str:
+    return f"[id={json.dumps(field_id)}]"
+
+
+def _as_choice_list(value: object) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    return [text] if text else []
+
+
+async def _find_matching_option_label(fieldset, option_text: str):
+    labels = fieldset.locator("label")
+    count = await labels.count()
+    query = _normalize_label(option_text)
+
+    exact_matches = []
+    fuzzy_matches = []
+    for index in range(count):
+        candidate = labels.nth(index)
+        text = _normalize_label((await candidate.inner_text()).strip())
+        if not text:
+            continue
+        if text == query:
+            exact_matches.append(candidate)
+            continue
+        if len(query) >= 2 and (query in text or text in query):
+            fuzzy_matches.append(candidate)
+
+    if exact_matches:
+        return exact_matches[0]
+    if fuzzy_matches:
+        return fuzzy_matches[0]
+    return None
+
+
+def _missing_profile_fields_for(unknown_required_fields: list[str], defaults: dict) -> list[str]:
+    missing: list[str] = []
+    for label in unknown_required_fields:
+        field_key = _matching_profile_field_key(label)
+        if not field_key or defaults.get(field_key):
+            continue
+        missing.append(field_key)
+    return sorted(set(missing))
+
+
+def _matching_profile_field_key(label: str) -> str | None:
+    normalized = _normalize_label(label)
+    for field_key, patterns in _KNOWN_PROFILE_FIELD_PATTERNS.items():
+        if any(_normalize_label(pattern) in normalized for pattern in patterns):
+            return field_key
+    return None
 
 
 async def _wait_for_submission_confirmation(page: Page) -> str:

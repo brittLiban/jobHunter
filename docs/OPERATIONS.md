@@ -93,6 +93,63 @@ The active software-engineer profile currently uses:
 
 The prompt text is what the LLM sees for extraction, scoring, and tailoring. The `.docx` file is what Playwright uploads during actual applications.
 
+## Fully Autonomous Question Handling
+
+The Greenhouse submitter can now answer company-specific recurring questions from profile JSON without code changes.
+
+Store them in:
+
+- `preferences_json.application_form_defaults.custom_question_answers`
+
+Each entry should include:
+
+- `label`: the question label text or a distinctive substring
+- `value`: the answer to fill
+- `kind`: `text` or `select`
+
+Example:
+
+```json
+[
+  {
+    "label": "Have you previously applied to Amazon or any Amazon subsidiary?",
+    "value": "No",
+    "kind": "select"
+  },
+  {
+    "label": "Are you subject to a non-competition agreement",
+    "value": "No",
+    "kind": "select"
+  }
+]
+```
+
+This is the right place for factual employment-history, immigration, relocation, and company-specific application questions that cannot be inferred from a resume safely.
+
+## Ollama-Assisted Form Resolution
+
+The Greenhouse submitter also uses the local Ollama model to help with form
+filling, but only in a constrained way:
+
+- it can map semantically similar labels to existing stored profile fields
+- it can reuse generated fit text for short open-text motivation questions
+- it records resolver attempts in the apply payload for debugging
+- it does not guess facts that are not already stored
+
+Questions that must be explicitly stored in profile defaults or
+`custom_question_answers` include:
+
+- work authorization
+- sponsorship or immigration support
+- citizenship
+- prior company applications
+- prior employment history
+- relocation preference
+- non-compete restrictions
+- company-familiarity questions
+
+This keeps the system autonomous without turning it into a hallucinating form bot.
+
 ## Logs
 
 If you run locally, write stdout/stderr to files under `logs/` so you can inspect cycles later.

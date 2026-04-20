@@ -417,12 +417,52 @@ def get_auto_apply_jobs(limit: int | None = None) -> list[sqlite3.Row]:
         ORDER BY a.fit_score DESC, j.date_found DESC, a.id DESC
     """
     params: list[Any] = [config.AUTO_APPLY_MIN_SCORE]
-    if limit is not None:
-        sql += " LIMIT ?"
-        params.append(limit)
 
     with _get_conn() as conn:
-        return conn.execute(sql, params).fetchall()
+        rows = conn.execute(sql, params).fetchall()
+
+    filtered = [
+        row
+        for row in rows
+        if _supports_auto_apply_source(row["source"], row["url"])
+        and _should_retry_auto_apply(row["apply_data"])
+    ]
+    if limit is not None:
+        return filtered[:limit]
+    return filtered
+
+
+def _supports_auto_apply_source(source: str | None, url: str | None) -> bool:
+    source_lower = str(source or "").strip().lower()
+    url_lower = str(url or "").strip().lower()
+    return source_lower == "greenhouse" or "greenhouse" in url_lower or "gh_jid=" in url_lower
+
+
+def _should_retry_auto_apply(raw_apply_data: str | None) -> bool:
+    if not raw_apply_data:
+        return True
+
+    try:
+        payload = json.loads(raw_apply_data)
+    except json.JSONDecodeError:
+        return True
+
+    if not isinstance(payload, dict):
+        return True
+
+    retryable = payload.get("retryable")
+    if isinstance(retryable, bool):
+        return retryable
+
+    error = str(payload.get("error") or "").strip().lower()
+    blocked_reason = str(payload.get("blocked_reason") or "").strip().lower()
+    if blocked_reason in {"unsupported_source", "missing_profile_fields", "unknown_required_fields"}:
+        return False
+    if error.startswith("no submitter is registered"):
+        return False
+    if error == "unknown required application fields remain.":
+        return False
+    return True
 
 
 def get_stats() -> dict:

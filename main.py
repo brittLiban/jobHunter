@@ -247,15 +247,15 @@ async def run_auto_apply_queue(profile: dict) -> dict[str, int]:
     """Apply to a small queue of high-confidence scored jobs."""
     if not config.AUTO_APPLY_ENABLED:
         logger.info("[Apply] Auto-apply disabled.")
-        return {"applied": 0, "dry_run": 0, "failed": 0}
+        return {"applied": 0, "dry_run": 0, "failed": 0, "blocked": 0}
 
     ready = get_auto_apply_jobs(limit=config.AUTO_APPLY_MAX_PER_RUN)
     if not ready:
         logger.info("[Apply] No scored jobs are ready for auto-apply.")
-        return {"applied": 0, "dry_run": 0, "failed": 0}
+        return {"applied": 0, "dry_run": 0, "failed": 0, "blocked": 0}
 
     logger.info("[Apply] Processing %d auto-apply candidate(s)...", len(ready))
-    counts = {"applied": 0, "dry_run": 0, "failed": 0}
+    counts = {"applied": 0, "dry_run": 0, "failed": 0, "blocked": 0}
     for row in ready:
         job = dict(row)
         app_id = job["app_id"]
@@ -282,7 +282,10 @@ async def run_auto_apply_queue(profile: dict) -> dict[str, int]:
 
         reason = result.error or "unknown_auto_apply_error"
         log_apply_failure(app_id, reason, payload)
-        counts["failed"] += 1
+        if result.retryable:
+            counts["failed"] += 1
+        else:
+            counts["blocked"] += 1
 
     return counts
 
@@ -414,6 +417,7 @@ async def main() -> None:
         "applied": auto_apply_counts["applied"],
         "dry_run": auto_apply_counts["dry_run"],
         "apply_failed": auto_apply_counts["failed"],
+        "apply_blocked": auto_apply_counts["blocked"],
     }
     counts["remaining"] = max(0, total_unscored - len(unscored))
     _print_summary(new_count, counts)
@@ -432,6 +436,7 @@ def _print_summary(new_count: int, counts: dict) -> None:
     logger.info("  Auto-applied       : %d", counts.get("applied", 0))
     logger.info("  Auto-apply dry run : %d", counts.get("dry_run", 0))
     logger.info("  Auto-apply failed  : %d", counts.get("apply_failed", 0))
+    logger.info("  Auto-apply blocked : %d", counts.get("apply_blocked", 0))
     logger.info("  Remaining queue    : %d", counts.get("remaining", 0))
     logger.info("=" * 60)
     logger.info("  Run the dashboard: streamlit run dashboard/app.py")

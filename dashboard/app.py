@@ -95,6 +95,71 @@ def _unwrap_result(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _safe_str_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _collect_auto_apply_insights(jobs: list[dict]) -> dict[str, Any]:
+    ready_jobs = db_ops.get_auto_apply_jobs()
+    blocked_jobs: list[dict[str, Any]] = []
+    missing_fields: dict[str, list[str]] = {}
+    unresolved_questions: dict[str, list[str]] = {}
+    unsupported_jobs: list[str] = []
+
+    for job in jobs:
+        if (job.get("status") or "") != "scored":
+            continue
+        if not job.get("apply_decision"):
+            continue
+        score = job.get("fit_score")
+        if score is None or score < config.AUTO_APPLY_MIN_SCORE:
+            continue
+
+        payload = _load_json(job.get("apply_data"))
+        blocked_reason = str(payload.get("blocked_reason") or "").strip()
+        if not blocked_reason:
+            continue
+
+        label = f"{job.get('company', '')} - {job.get('title', '')}".strip(" -")
+        blocked_jobs.append(
+            {
+                "job": label,
+                "reason": blocked_reason,
+                "error": payload.get("error") or "",
+            }
+        )
+
+        if blocked_reason == "unsupported_source":
+            unsupported_jobs.append(label)
+
+        for field_name in _safe_str_list(payload.get("missing_profile_fields")):
+            missing_fields.setdefault(field_name, []).append(label)
+
+        if blocked_reason == "unknown_required_fields":
+            for question in _safe_str_list(payload.get("unknown_required_fields")):
+                unresolved_questions.setdefault(question, []).append(label)
+
+    custom_question_template = [
+        {
+            "label": question,
+            "value": "",
+            "kind": "select",
+        }
+        for question in sorted(unresolved_questions)
+    ]
+
+    return {
+        "ready_jobs": [dict(row) for row in ready_jobs],
+        "blocked_jobs": blocked_jobs,
+        "missing_fields": missing_fields,
+        "unresolved_questions": unresolved_questions,
+        "unsupported_jobs": unsupported_jobs,
+        "custom_question_template": custom_question_template,
+    }
+
+
 def load_jobs(
     status_filter: str,
     score_range: tuple[int, int],
@@ -270,6 +335,23 @@ def render_job_detail(job: dict) -> None:
                 "to initialize pipeline tracking before taking manual actions."
             )
             return
+
+        if apply_payload:
+            blocked_reason = apply_payload.get("blocked_reason")
+            missing_profile_fields = _safe_str_list(apply_payload.get("missing_profile_fields"))
+            unknown_required_fields = _safe_str_list(apply_payload.get("unknown_required_fields"))
+            if blocked_reason:
+                st.warning(
+                    f"Auto-apply is currently blocked for this job: {apply_payload.get('error') or blocked_reason}"
+                )
+                if missing_profile_fields:
+                    st.caption(
+                        "Missing profile fields: " + ", ".join(sorted(missing_profile_fields))
+                    )
+                if unknown_required_fields:
+                    st.caption(
+                        "Unresolved required questions: " + str(len(unknown_required_fields))
+                    )
 
         if config.AUTO_APPLY_ENABLED:
             if config.AUTO_APPLY_DRY_RUN:
@@ -476,6 +558,8 @@ elif page == "Profile Settings":
     if profile is None:
         st.error("No profile found. Run `python main.py` first to seed the profile.")
     else:
+        all_jobs = [dict(row) for row in db_ops.get_all_jobs_with_applications()]
+        auto_apply_insights = _collect_auto_apply_insights(all_jobs)
         preferences = profile.get("preferences_json", {})
         application_defaults = preferences.get("application_form_defaults", {})
         current_variant_key = preferences.get("resume_variant_key", config.ACTIVE_RESUME_KEY)
@@ -544,6 +628,49 @@ elif page == "Profile Settings":
                 f"Auto-apply enabled: {config.AUTO_APPLY_ENABLED} | "
                 f"Dry run: {config.AUTO_APPLY_DRY_RUN}"
             )
+
+        st.subheader("Autonomy Readiness")
+        ready_count = len(auto_apply_insights["ready_jobs"])
+        blocked_count = len(auto_apply_insights["blocked_jobs"])
+        unresolved_question_count = len(auto_apply_insights["unresolved_questions"])
+        missing_field_count = len(auto_apply_insights["missing_fields"])
+        readiness_cols = st.columns(4)
+        readiness_cols[0].metric("Ready Now", ready_count)
+        readiness_cols[1].metric("Blocked Jobs", blocked_count)
+        readiness_cols[2].metric("Missing Fields", missing_field_count)
+        readiness_cols[3].metric("Open Questions", unresolved_question_count)
+
+        if auto_apply_insights["ready_jobs"]:
+            with st.expander("Ready Auto-Apply Jobs", expanded=True):
+                for job in auto_apply_insights["ready_jobs"]:
+                    st.markdown(
+                        f"- {job.get('company', '')} | {job.get('title', '')} | score {job.get('fit_score', '-')}"
+                    )
+        else:
+            st.info("No jobs are currently ready for autonomous submission.")
+
+        if auto_apply_insights["missing_fields"]:
+            with st.expander("Missing Profile Fields", expanded=True):
+                for field_name, labels in sorted(auto_apply_insights["missing_fields"].items()):
+                    st.markdown(f"**{field_name}**")
+                    st.write(", ".join(labels[:3]))
+        if auto_apply_insights["unsupported_jobs"]:
+            with st.expander("Unsupported Source Blocks"):
+                for label in auto_apply_insights["unsupported_jobs"]:
+                    st.markdown(f"- {label}")
+        if auto_apply_insights["unresolved_questions"]:
+            with st.expander("Recurring Unresolved Required Questions", expanded=True):
+                for question, labels in sorted(auto_apply_insights["unresolved_questions"].items()):
+                    st.markdown(f"**{question}**")
+                    st.write(", ".join(labels[:3]))
+                st.caption(
+                    "Add answers for recurring ATS questions under "
+                    "`preferences_json.application_form_defaults.custom_question_answers`."
+                )
+                st.code(
+                    json.dumps(auto_apply_insights["custom_question_template"], indent=2),
+                    language="json",
+                )
 
         with st.form("profile_form"):
             left_col, right_col = st.columns(2)

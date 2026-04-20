@@ -105,6 +105,35 @@ The dashboard supports:
 - loading configured resume variants into the profile
 - manually triggering auto-apply for a selected job
 
+For ATS-specific recurring questions, store explicit answers under:
+
+`preferences_json.application_form_defaults.custom_question_answers`
+
+Example:
+
+```json
+[
+  {
+    "label": "Have you previously applied to Amazon or any Amazon subsidiary?",
+    "value": "No",
+    "kind": "select"
+  },
+  {
+    "label": "Are you open to relocation?",
+    "value": "No",
+    "kind": "select"
+  }
+]
+```
+
+Greenhouse auto-apply also uses the local Ollama model to resolve semantically
+similar required question labels when the answer is already grounded in your
+stored profile or generated application text. It still fails closed for
+questions that should not be guessed, such as work authorization, sponsorship,
+citizenship, prior applications, prior employment, relocation preference, and
+non-compete restrictions, unless you have stored an explicit answer in the
+profile defaults.
+
 Profile data is stored in SQLite under `user_profile`, and the dashboard reads/writes it through [database/db.py](database/db.py).
 
 ## Logs and Data
