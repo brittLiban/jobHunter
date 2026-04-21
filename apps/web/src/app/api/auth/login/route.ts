@@ -2,6 +2,7 @@ import { loginInputSchema } from "@jobhunter/core";
 import { NextResponse } from "next/server";
 
 import { logInUser } from "@/lib/auth";
+import { buildAppUrl } from "@/lib/redirects";
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -11,14 +12,14 @@ export async function POST(request: Request) {
   });
 
   if (!parsed.success) {
-    return NextResponse.redirect(new URL("/login?error=invalid_login", request.url));
+    return NextResponse.redirect(buildAppUrl("/login?error=invalid_login", request));
   }
 
   try {
     const user = await logInUser(parsed.data.email, parsed.data.password);
     const destination = user.onboardingCompletedAt ? "/dashboard" : "/onboarding";
-    return NextResponse.redirect(new URL(destination, request.url));
+    return NextResponse.redirect(buildAppUrl(destination, request));
   } catch {
-    return NextResponse.redirect(new URL("/login?error=login_failed", request.url));
+    return NextResponse.redirect(buildAppUrl("/login?error=login_failed", request));
   }
 }

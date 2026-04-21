@@ -2,6 +2,7 @@ import { signupInputSchema } from "@jobhunter/core";
 import { NextResponse } from "next/server";
 
 import { signUpUser } from "@/lib/auth";
+import { buildAppUrl } from "@/lib/redirects";
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -12,14 +13,14 @@ export async function POST(request: Request) {
   });
 
   if (!parsed.success) {
-    return NextResponse.redirect(new URL("/signup?error=invalid_signup", request.url));
+    return NextResponse.redirect(buildAppUrl("/signup?error=invalid_signup", request));
   }
 
   try {
     await signUpUser(parsed.data);
   } catch {
-    return NextResponse.redirect(new URL("/signup?error=signup_failed", request.url));
+    return NextResponse.redirect(buildAppUrl("/signup?error=signup_failed", request));
   }
 
-  return NextResponse.redirect(new URL("/onboarding", request.url));
+  return NextResponse.redirect(buildAppUrl("/onboarding", request));
 }

@@ -3,6 +3,7 @@ import { createResumeForUser, listResumesForUser } from "@jobhunter/db";
 import { NextResponse } from "next/server";
 
 import { requireCurrentUser } from "@/lib/auth";
+import { buildAppUrl } from "@/lib/redirects";
 import { saveUploadedResumeFile } from "@/lib/uploads";
 
 export async function GET() {
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   const file = formData.get("resumeFile");
 
   if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.redirect(new URL("/resumes?error=missing_file", request.url));
+    return NextResponse.redirect(buildAppUrl("/resumes?error=missing_file", request));
   }
 
   const parsed = resumeUploadInputSchema.safeParse({
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
   });
 
   if (!parsed.success) {
-    return NextResponse.redirect(new URL("/resumes?error=invalid_resume", request.url));
+    return NextResponse.redirect(buildAppUrl("/resumes?error=invalid_resume", request));
   }
 
   const upload = await saveUploadedResumeFile(file);
@@ -38,5 +39,5 @@ export async function POST(request: Request) {
     storageKey: upload.storageKey,
   });
 
-  return NextResponse.redirect(new URL("/resumes?uploaded=1", request.url));
+  return NextResponse.redirect(buildAppUrl("/resumes?uploaded=1", request));
 }

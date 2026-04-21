@@ -95,6 +95,7 @@ Important variables:
 
 - `DATABASE_URL`
 - `AUTH_SECRET`
+- `NEXT_PUBLIC_APP_URL`
 - `JOBHUNTER_ENABLE_DEMO_SEED`
 - `JOBHUNTER_AUTO_APPLY_ENABLED`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN`
@@ -107,6 +108,8 @@ Important variables:
 - `JOBHUNTER_WORKABLE_COMPANIES`
 
 When no LLM provider is configured, the services fall back to deterministic mock output so the pipeline still runs.
+
+`NEXT_PUBLIC_APP_URL` should be set to the public base URL for the web app. Auth and dashboard POST routes use it for redirects, and they also honor forwarded host/protocol headers when the app is deployed behind Docker or a reverse proxy.
 
 ## First Run Flow
 

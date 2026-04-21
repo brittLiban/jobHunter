@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { requireCurrentUser } from "@/lib/auth";
 import { preferencesFromFormData, profileFromFormData } from "@/lib/forms";
+import { buildAppUrl } from "@/lib/redirects";
 
 export async function POST(request: Request) {
   const user = await requireCurrentUser();
@@ -15,9 +16,9 @@ export async function POST(request: Request) {
   });
 
   if (!parsed.success) {
-    return NextResponse.redirect(new URL("/onboarding?error=invalid_profile", request.url));
+    return NextResponse.redirect(buildAppUrl("/onboarding?error=invalid_profile", request));
   }
 
   await upsertOnboardingData(user.id, parsed.data, user.email);
-  return NextResponse.redirect(new URL("/dashboard", request.url));
+  return NextResponse.redirect(buildAppUrl("/dashboard", request));
 }

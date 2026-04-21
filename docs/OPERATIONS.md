@@ -160,6 +160,7 @@ Checkpoint artifacts are written under:
 
 - `DATABASE_URL`
 - `AUTH_SECRET`
+- `NEXT_PUBLIC_APP_URL`
 - `JOBHUNTER_ENABLE_DEMO_SEED`
 - `JOBHUNTER_AUTO_APPLY_ENABLED`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN`
@@ -172,6 +173,8 @@ Checkpoint artifacts are written under:
 - `JOBHUNTER_ASHBY_BOARDS`
 - `JOBHUNTER_LEVER_SITES`
 - `JOBHUNTER_WORKABLE_COMPANIES`
+
+`NEXT_PUBLIC_APP_URL` should match the public web origin. Auth and dashboard POST routes use it for redirect targets, and they fall back to forwarded host/protocol headers when the app is running behind Docker or a reverse proxy.
 
 ## File Locations
 
