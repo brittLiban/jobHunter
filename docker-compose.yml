@@ -1,100 +1,91 @@
-x-app-build: &app-build
-  build:
-    context: .
-    dockerfile: Dockerfile
-  volumes:
-    - job_data:/app/data
-    - ${JOB_HUNTER_RESUME_HOST_DIR:-C:/Users/liban/Desktop/01_Career/Resumes}:/resumes:ro
-  environment:
-    - OLLAMA_URL=http://ollama:11434/api/generate
-    - DB_PATH=/app/data/jobs.db
-    - JOB_HUNTER_RESUME_ROOT=/resumes
-    - SCHEDULER_INTERVAL_HOURS=1
-    - PLAYWRIGHT_HEADLESS=true
-
 services:
-  ollama:
-    image: ollama/ollama:latest
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jobhunter}
+      POSTGRES_USER: ${POSTGRES_USER:-jobhunter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jobhunter}
     ports:
-      - "11434:11434"
+      - "5432:5432"
     volumes:
-      - ollama_models:/root/.ollama
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 15s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jobhunter} -d ${POSTGRES_DB:-jobhunter}"]
+      interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
-    restart: unless-stopped
+      start_period: 10s
 
-  model-pull:
-    image: ollama/ollama:latest
-    depends_on:
-      ollama:
-        condition: service_healthy
-    volumes:
-      - ollama_models:/root/.ollama
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-    entrypoint: >
-      sh -c "ollama pull llama3.1:8b-instruct-q4_K_M"
-    restart: "no"
-
-  dashboard:
-    <<: *app-build
+  web:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: dashboard
+      dockerfile: Dockerfile.web
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://jobhunter:jobhunter@postgres:5432/jobhunter}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      AUTH_SECRET: ${AUTH_SECRET:-replace-me}
+    command: >
+      sh -lc "npm install &&
+      npm run db:generate &&
+      npm run dev --workspace @jobhunter/web"
     depends_on:
-      ollama:
+      postgres:
         condition: service_healthy
-      model-pull:
+      migrate:
         condition: service_completed_successfully
     ports:
-      - "8501:8501"
-    restart: unless-stopped
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - web_node_modules:/app/node_modules
+      - web_next_cache:/app/apps/web/.next
 
-  scraper:
-    <<: *app-build
+  worker:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: scraper
-    depends_on:
-      ollama:
-        condition: service_healthy
-      model-pull:
-        condition: service_completed_successfully
-    restart: "no"
-    profiles:
-      - scraper
-
-  scheduler:
-    <<: *app-build
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: scheduler
-    depends_on:
-      ollama:
-        condition: service_healthy
-      model-pull:
-        condition: service_completed_successfully
+      dockerfile: Dockerfile.worker
     environment:
-      - OLLAMA_URL=http://ollama:11434/api/generate
-      - DB_PATH=/app/data/jobs.db
-      - JOB_HUNTER_RESUME_ROOT=/resumes
-      - SCHEDULER_INTERVAL_HOURS=1
-      - PLAYWRIGHT_HEADLESS=true
-      - AUTO_APPLY_ENABLED=true
-      - AUTO_APPLY_DRY_RUN=false
-      - AUTO_APPLY_MAX_PER_RUN=20
-      - JOB_HUNTER_MAX_UNSCORED_JOBS_PER_RUN=4
-    restart: unless-stopped
+      NODE_ENV: development
+      DATABASE_URL: ${DATABASE_URL:-postgresql://jobhunter:jobhunter@postgres:5432/jobhunter}
+      PLAYWRIGHT_HEADLESS: ${PLAYWRIGHT_HEADLESS:-true}
+      JOBHUNTER_FIT_THRESHOLD: ${JOBHUNTER_FIT_THRESHOLD:-70}
+    command: >
+      sh -lc "npm install &&
+      npm run db:generate &&
+      npm run dev --workspace @jobhunter/worker"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+      - worker_node_modules:/app/node_modules
+      - worker_playwright_cache:/ms-playwright
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://jobhunter:jobhunter@postgres:5432/jobhunter}
+    command: >
+      sh -lc "npm install &&
+      npm run db:generate &&
+      npm run db:deploy"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - migrate_node_modules:/app/node_modules
 
 volumes:
-  job_data:
-    driver: local
-  ollama_models:
-    driver: local
+  postgres_data:
+  migrate_node_modules:
+  web_node_modules:
+  web_next_cache:
+  worker_node_modules:
+  worker_playwright_cache:

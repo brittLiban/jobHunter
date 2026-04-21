@@ -1,0 +1,29 @@
+{
+  "name": "jobhunter",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "db:generate": "npm run prisma:generate --workspace @jobhunter/db",
+    "db:deploy": "npm run prisma:deploy --workspace @jobhunter/db",
+    "db:migrate": "npm run prisma:migrate --workspace @jobhunter/db",
+    "db:seed": "npm run prisma:seed --workspace @jobhunter/db",
+    "dev": "npm run dev --workspace @jobhunter/web",
+    "dev:web": "npm run dev --workspace @jobhunter/web",
+    "dev:worker": "npm run dev --workspace @jobhunter/worker",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "prisma": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

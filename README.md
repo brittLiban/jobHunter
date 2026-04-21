@@ -1,173 +1,211 @@
-# Job Hunter
+# JobHunter
 
-Job Hunter is a local-first Python pipeline for finding software jobs, scoring them against a candidate profile, generating tailored application materials, and auto-submitting supported applications through Greenhouse.
+JobHunter is a human-in-the-loop job application system.
 
-The project has three main runtime surfaces:
+Core promise:
 
-- `main.py`: one pipeline run for discovery, scoring, tailoring, and auto-apply.
-- `scheduler.py`: recurring pipeline loop that runs every `SCHEDULER_INTERVAL_HOURS`.
-- `dashboard/app.py`: Streamlit dashboard for reviewing jobs, editing the profile, and manually triggering auto-apply.
+> We find, prepare, fill, and submit job applications for you when possible. When a site needs you, we pause and make it as easy as possible to finish.
 
-## Current Behavior
+This repository now contains two layers:
 
-- The scheduler interval is `1` hour by default.
-- Auto-apply is enabled by default.
-- Auto-apply dry-run mode is disabled by default.
-- Only Greenhouse candidate-side application flows are supported for submission today.
-- The software-engineer profile uses repo-local canonical resume text for LLM prompts and a `.docx` file for actual uploads.
+- The new TypeScript SaaS scaffold in `apps/` and `packages/`
+- The original Python pipeline, preserved as a reference implementation for discovery, scoring prompts, form grounding, and Greenhouse safety behavior
 
-## Profile Sources
+Supporting docs:
 
-The active software-engineer profile is split into two sources on purpose:
+- [Architecture](docs/ARCHITECTURE.md)
+- [Implementation TODOs](docs/TODO.md)
+- [Legacy Python operations](docs/OPERATIONS.md)
 
-- LLM prompt text source: [profiles/liban_britt_software_engineer.md](profiles/liban_britt_software_engineer.md)
-- Resume upload source: `C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_SWE_Current.docx`
+## Reuse Audit
 
-This keeps the scoring/tailoring profile text stable in-repo while still giving the submitter a Word document to upload to application forms.
+The existing Python system was not discarded. It is being reused as reference material for:
 
-The default profile bootstrap and scheduler/apply defaults live in [config.py](config.py).
+- job discovery source patterns
+- job scoring and resume tailoring prompt shapes
+- conservative form-grounding rules
+- Playwright safety behavior for CAPTCHA, verification, and failed-submit checkpoints
 
-## Local Run
+The existing Streamlit + SQLite runtime is not the long-term SaaS path. The new SaaS path uses Next.js, Prisma, and Postgres while keeping the Python implementation available for comparison and migration work.
 
-Create a venv, install dependencies, and install the Playwright browser:
+Legacy Docker files were preserved as:
 
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m playwright install chromium
+- `Dockerfile.legacy-python`
+- `docker-compose.legacy-python.yml`
+
+## Workspace Layout
+
+```text
+apps/
+  web/        Next.js marketing site + authenticated app shell + route handlers
+  worker/     background worker scaffold for ingestion, scoring, tailoring, and apply planning
+
+packages/
+  core/       shared domain types, statuses, rules engine helpers, anti-repetition logic
+  db/         Prisma schema, initial SQL migration, Prisma config, seed data
+  llm/        modular scorer, resume tailor, and short-answer generator services
+  automation/ Playwright-facing checkpoint detection and submit planning
+  job-sources/mock adapter layer for ingestion
 ```
 
-Run one pipeline cycle:
+## Current Checkpoint
+
+Implemented in this checkpoint:
+
+- multi-package TypeScript workspace
+- polished marketing site at `/`
+- authenticated app shell routes at `/dashboard`, `/jobs`, `/applications`, `/profile`
+- shared job/application statuses and structured profile field definitions
+- initial anti-repetition utility for generated answers
+- Prisma schema for:
+  - users
+  - user profiles
+  - user preferences
+  - resumes
+  - resume versions
+  - job sources
+  - jobs
+  - job scores
+  - tailored documents
+  - generated answers
+  - applications
+  - application events
+  - notifications
+  - prompt templates
+- initial SQL migration in `packages/db/prisma/migrations/0001_init`
+- demo seed script
+- mock job source adapter
+- modular LLM service scaffolds for:
+  - job scoring
+  - resume tailoring
+  - short answers
+- automation planning layer that pauses on manual checkpoints instead of bypassing them
+- Dockerized `web`, `worker`, `migrate`, and `postgres` services
+
+Not implemented yet:
+
+- real auth flow
+- onboarding persistence
+- resume uploads
+- real job source syncs beyond mock data
+- live Playwright application submission
+- dashboard data loaded from Postgres instead of demo fixtures
+
+Those are tracked in [docs/TODO.md](docs/TODO.md).
+
+## Prisma Models
+
+Primary Prisma models introduced in `packages/db/prisma/schema.prisma`:
+
+- `User`
+- `UserAccount`
+- `UserSession`
+- `UserProfile`
+- `UserPreference`
+- `Resume`
+- `ResumeVersion`
+- `JobSource`
+- `Job`
+- `JobScore`
+- `TailoredDocument`
+- `GeneratedAnswer`
+- `Application`
+- `ApplicationEvent`
+- `Notification`
+- `PromptTemplate`
+
+The schema is Postgres-first and designed so a future browser extension can reuse the same profile, scoring, tailoring, and application APIs.
+
+## Local Development
+
+### 1. Install dependencies
 
 ```powershell
-python main.py
+npm install
 ```
 
-Run the recurring scheduler:
+### 2. Generate Prisma client
 
 ```powershell
-python scheduler.py
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+npm run db:generate
 ```
 
-Run the dashboard:
+### 3. Verify the workspace
 
 ```powershell
-python -m streamlit run dashboard/app.py --server.port 8501
+npm run typecheck
+npm run build --workspace @jobhunter/web
+npm run start --workspace @jobhunter/worker
+```
+
+### 4. Apply migrations and seed demo data
+
+```powershell
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+npm run db:deploy
+npm run db:seed
 ```
 
 ## Docker Compose
 
-`docker-compose.yml` defines:
+The default `docker-compose.yml` now targets the SaaS stack:
 
-- `ollama`: local model server
-- `model-pull`: one-time pull for `llama3.1:8b-instruct-q4_K_M`
-- `dashboard`: Streamlit UI on port `8501`
-- `scheduler`: recurring 1-hour pipeline loop with auto-apply enabled
-- `scraper`: one-shot pipeline container for manual runs
+- `postgres`: primary database
+- `migrate`: applies Prisma migrations
+- `web`: Next.js app on port `3000`
+- `worker`: background processing scaffold
 
-Start the long-running services:
-
-```powershell
-docker compose up -d ollama model-pull dashboard scheduler
-```
-
-Check service status:
+Start the stack:
 
 ```powershell
-docker compose ps
+docker compose up --build
 ```
 
-View scheduler logs:
+If you need the older local Python pipeline instead, use:
 
 ```powershell
-docker compose logs -f scheduler
+docker compose -f docker-compose.legacy-python.yml up --build
 ```
 
-## Auto-Apply Rules
+Open:
 
-Auto-apply currently runs at the end of each pipeline cycle and only targets jobs that satisfy all of the following:
+- marketing site and app shell: `http://localhost:3000`
 
-- application `status = 'scored'`
-- `apply_decision = 1`
-- `fit_score >= AUTO_APPLY_MIN_SCORE`
-- the source is supported by a submitter
+Environment defaults live in `.env.example`.
 
-Today the only live submitter is Greenhouse, implemented in [submitter/greenhouse.py](submitter/greenhouse.py). Unsupported sources fail closed rather than attempting a partial submission.
+## Product Rules Embedded In The Architecture
 
-## Dashboard
+The new shared domain layer already encodes the core product behavior:
 
-The dashboard supports:
+- structured profile facts are distinct from LLM-generated text
+- automation pauses on friction or uncertainty
+- auto-submit is allowed only when flow simplicity and confidence are high
+- CAPTCHA and verification handling is pause-only, never bypass
 
-- filtering jobs by status, score, company, and source
-- reviewing extracted/scored/tailored data
-- editing the stored profile and preferences JSON
-- loading configured resume variants into the profile
-- manually triggering auto-apply for a selected job
+## Legacy Python Reference
 
-For ATS-specific recurring questions, store explicit answers under:
+The pre-existing Python implementation remains in the repository and is still useful when porting functionality:
 
-`preferences_json.application_form_defaults.custom_question_answers`
+- `scraper/`
+- `llm/`
+- `submitter/`
+- `tracker/`
+- `dashboard/`
 
-Example:
+These modules are the reference source for:
 
-```json
-[
-  {
-    "label": "Have you previously applied to Amazon or any Amazon subsidiary?",
-    "value": "No",
-    "kind": "select"
-  },
-  {
-    "label": "Are you open to relocation?",
-    "value": "No",
-    "kind": "select"
-  }
-]
-```
+- ATS-specific heuristics
+- safety-first submit behavior
+- form question grounding
+- prompt structure
 
-Greenhouse auto-apply also uses the local Ollama model to resolve semantically
-similar required question labels when the answer is already grounded in your
-stored profile or generated application text. It still fails closed for
-questions that should not be guessed, such as work authorization, sponsorship,
-citizenship, prior applications, prior employment, relocation preference, and
-non-compete restrictions, unless you have stored an explicit answer in the
-profile defaults.
+## Next Steps
 
-Every LLM-produced form answer is post-validated before fill:
+Immediate next implementation slices:
 
-- custom answers must match `custom_question_answers`
-- profile answers must match both the explicit stored value and the right profile field label
-- generated open-text answers must match stored generated materials and only fill fit/motivation-style prompts
-
-If the answer cannot be traced back to one of those sources, it is rejected and
-the form remains blocked instead of autofilling a guessed response.
-
-Profile data is stored in SQLite under `user_profile`, and the dashboard reads/writes it through [database/db.py](database/db.py).
-
-## Logs and Data
-
-Local runtime state is stored in:
-
-- `data/`: SQLite database and related WAL files
-- `logs/`: local scheduler and dashboard process logs
-
-These directories are intentionally ignored by git.
-
-To wipe discovered jobs and applications while keeping the profile:
-
-```powershell
-@'
-from database.db import reset_job_data
-reset_job_data()
-'@ | python -
-```
-
-## Known Limits
-
-- Auto-apply support is Greenhouse-only.
-- Some application forms use anti-bot protection such as invisible reCAPTCHA; those are blocked and reported rather than silently retried.
-- External profile upload files are referenced by absolute local paths.
-- The scheduler must be kept running as a process or service if you want continuous 1-hour execution.
-
-More operational detail is in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+1. wire real auth and onboarding to the Prisma models
+2. replace demo dashboard data with Prisma-backed queries
+3. add resume upload and version management
+4. add real ingestion adapters after the mock source layer
+5. connect Playwright automation to the new application model and checkpoint flow

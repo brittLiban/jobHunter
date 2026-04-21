@@ -1,0 +1,100 @@
+x-app-build: &app-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - job_data:/app/data
+    - ${JOB_HUNTER_RESUME_HOST_DIR:-C:/Users/liban/Desktop/01_Career/Resumes}:/resumes:ro
+  environment:
+    - OLLAMA_URL=http://ollama:11434/api/generate
+    - DB_PATH=/app/data/jobs.db
+    - JOB_HUNTER_RESUME_ROOT=/resumes
+    - SCHEDULER_INTERVAL_HOURS=1
+    - PLAYWRIGHT_HEADLESS=true
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  model-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: >
+      sh -c "ollama pull llama3.1:8b-instruct-q4_K_M"
+    restart: "no"
+
+  dashboard:
+    <<: *app-build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dashboard
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-pull:
+        condition: service_completed_successfully
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+  scraper:
+    <<: *app-build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: scraper
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-pull:
+        condition: service_completed_successfully
+    restart: "no"
+    profiles:
+      - scraper
+
+  scheduler:
+    <<: *app-build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: scheduler
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-pull:
+        condition: service_completed_successfully
+    environment:
+      - OLLAMA_URL=http://ollama:11434/api/generate
+      - DB_PATH=/app/data/jobs.db
+      - JOB_HUNTER_RESUME_ROOT=/resumes
+      - SCHEDULER_INTERVAL_HOURS=1
+      - PLAYWRIGHT_HEADLESS=true
+      - AUTO_APPLY_ENABLED=true
+      - AUTO_APPLY_DRY_RUN=false
+      - AUTO_APPLY_MAX_PER_RUN=20
+      - JOB_HUNTER_MAX_UNSCORED_JOBS_PER_RUN=4
+    restart: unless-stopped
+
+volumes:
+  job_data:
+    driver: local
+  ollama_models:
+    driver: local

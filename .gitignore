@@ -4,8 +4,17 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.local
+.env.*.local
 .deps/
 .pydeps/
+
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
 
 data/
 data/*.log

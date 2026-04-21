@@ -1,0 +1,436 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AccountProvider {
+  CREDENTIALS
+  GOOGLE
+  GITHUB
+}
+
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ON_SITE
+  FLEXIBLE
+}
+
+enum ApplicationStatus {
+  DISCOVERED
+  SCORED
+  SKIPPED
+  QUEUED
+  PREPARED
+  AUTO_SUBMITTED
+  NEEDS_USER_ACTION
+  SUBMITTED
+  RESPONDED
+  INTERVIEW
+  REJECTED
+  OFFER
+}
+
+enum ManualActionType {
+  CAPTCHA
+  EMAIL_VERIFICATION_CODE
+  SECURITY_VERIFICATION
+  UPLOAD_FAILURE
+  UNKNOWN_FORM_STRUCTURE
+  MISSING_REQUIRED_INFO
+  AMBIGUOUS_SUBMIT_STATE
+}
+
+enum JobSourceKind {
+  MOCK
+  GREENHOUSE
+  ASHBY
+  LEVER
+  WORKABLE
+  COMPANY_SITE
+  EXTENSION
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  ACTION_REQUIRED
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum TailoredDocumentKind {
+  RESUME
+  COVER_LETTER
+  APPLICATION_PACKET
+}
+
+enum GeneratedAnswerKind {
+  WHY_ROLE
+  WHY_FIT
+  ANYTHING_ELSE
+  CUSTOM
+}
+
+enum PromptTaskKind {
+  JOB_SCORER
+  RESUME_TAILOR
+  SHORT_ANSWER_GENERATOR
+}
+
+enum PromptTemplateScope {
+  GLOBAL
+  SOURCE
+  USER
+}
+
+enum ApplicationEventType {
+  DISCOVERED
+  SCORED
+  FILTERED
+  QUEUED
+  PREPARED
+  AUTO_SUBMITTED
+  NEEDS_USER_ACTION
+  SUBMITTED
+  RESPONDED
+  INTERVIEW
+  REJECTED
+  OFFER
+  ERROR
+  NOTE
+}
+
+model User {
+  id                     String             @id @default(cuid())
+  email                  String             @unique
+  passwordHash           String?
+  fullName               String?
+  role                   UserRole           @default(USER)
+  onboardingCompletedAt  DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  accounts               UserAccount[]
+  sessions               UserSession[]
+  profile                UserProfile?
+  preferences            UserPreference?
+  resumes                Resume[]
+  scores                 JobScore[]
+  tailoredDocuments      TailoredDocument[]
+  generatedAnswers       GeneratedAnswer[]
+  applications           Application[]
+  notifications          Notification[]
+  promptTemplates        PromptTemplate[]
+}
+
+model UserAccount {
+  id                String          @id @default(cuid())
+  userId            String
+  provider          AccountProvider
+  providerAccountId String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  sessionToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserProfile {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  fullLegalName          String?
+  preferredName          String?
+  phone                  String?
+  city                   String?
+  state                  String?
+  country                String?  @default("United States")
+  linkedinUrl            String?
+  githubUrl              String?
+  portfolioUrl           String?
+  workAuthorization      String?
+  usCitizenStatus        String?
+  requiresVisaSponsorship Boolean?
+  veteranStatus          String?
+  disabilityStatus       String?
+  school                 String?
+  degree                 String?
+  graduationDate         DateTime?
+  yearsOfExperience      Int?
+  currentCompany         String?
+  currentTitle           String?
+  summary                String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserPreference {
+  id               String          @id @default(cuid())
+  userId           String          @unique
+  targetRoles      String[]
+  targetLocations  String[]
+  workModes        WorkMode[]
+  salaryFloor      Int?
+  fitThreshold     Int             @default(70)
+  dailyTargetVolume Int            @default(15)
+  includeKeywords  String[]
+  excludeKeywords  String[]
+  sourceKinds      JobSourceKind[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Resume {
+  id               String          @id @default(cuid())
+  userId           String
+  label            String
+  originalFileName String
+  mimeType         String
+  storageKey       String
+  baseText         String
+  isDefault        Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions         ResumeVersion[]
+  applications     Application[]
+  tailoredDocuments TailoredDocument[]
+}
+
+model ResumeVersion {
+  id            String   @id @default(cuid())
+  resumeId      String
+  applicationId String?
+  label         String
+  contentText   String
+  storageKey    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  resume        Resume    @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+}
+
+model JobSource {
+  id            String         @id @default(cuid())
+  slug          String         @unique
+  name          String
+  kind          JobSourceKind
+  baseUrl       String?
+  configuration Json?
+  isEnabled     Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  jobs          Job[]
+  applications  Application[]
+  promptTemplates PromptTemplate[]
+}
+
+model Job {
+  id               String            @id @default(cuid())
+  sourceId         String
+  externalId       String?
+  canonicalUrl     String            @unique
+  applyUrl         String?
+  company          String
+  title            String
+  locationText     String?
+  workMode         WorkMode?
+  employmentType   String?
+  salaryMin        Int?
+  salaryMax        Int?
+  salaryCurrency   String?           @default("USD")
+  descriptionText  String
+  rawPayload       Json?
+  discoveredAt     DateTime          @default(now())
+  firstSeenAt      DateTime          @default(now())
+  lastSeenAt       DateTime          @default(now())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  source           JobSource         @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  scores           JobScore[]
+  tailoredDocuments TailoredDocument[]
+  generatedAnswers GeneratedAnswer[]
+  applications     Application[]
+
+  @@unique([sourceId, externalId])
+  @@index([company, title])
+}
+
+model JobScore {
+  id                String   @id @default(cuid())
+  userId            String
+  jobId             String
+  fitScore          Int
+  decision          Boolean
+  confidence        Float
+  topMatches        String[]
+  majorGaps         String[]
+  weightedBreakdown Json
+  ruleBreakdown     Json
+  llmResponse       Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job               Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  applications      Application[]
+
+  @@unique([userId, jobId])
+  @@index([fitScore])
+}
+
+model TailoredDocument {
+  id            String              @id @default(cuid())
+  userId        String
+  jobId         String
+  applicationId String?
+  resumeId      String?
+  kind          TailoredDocumentKind
+  title         String
+  contentText   String
+  contentJson   Json?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job           Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  application   Application?        @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  resume        Resume?             @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId, kind])
+}
+
+model GeneratedAnswer {
+  id             String              @id @default(cuid())
+  userId         String
+  jobId          String
+  applicationId  String?
+  kind           GeneratedAnswerKind
+  questionText   String
+  answerText     String
+  variationVerb  String?
+  variationOpening String?
+  fingerprint    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job            Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  application    Application?        @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId, kind])
+}
+
+model Application {
+  id                    String               @id @default(cuid())
+  userId                String
+  jobId                 String
+  sourceId              String?
+  resumeId              String?
+  scoreId               String?
+  fitScoreSnapshot      Int?
+  fitThresholdSnapshot  Int                  @default(70)
+  status                ApplicationStatus    @default(DISCOVERED)
+  manualActionType      ManualActionType?
+  blockingReason        String?
+  lastAutomationUrl     String?
+  preparedPayload       Json?
+  automationSession     Json?
+  simpleFlowConfirmed   Boolean              @default(false)
+  highConfidence        Boolean              @default(false)
+  preparedAt            DateTime?
+  autoSubmittedAt       DateTime?
+  submittedAt           DateTime?
+  needsUserActionAt     DateTime?
+  respondedAt           DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job                   Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  source                JobSource?           @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  resume                Resume?              @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  score                 JobScore?            @relation(fields: [scoreId], references: [id], onDelete: SetNull)
+  resumeVersions        ResumeVersion[]
+  tailoredDocuments     TailoredDocument[]
+  generatedAnswers      GeneratedAnswer[]
+  events                ApplicationEvent[]
+  notifications         Notification[]
+
+  @@unique([userId, jobId])
+  @@index([status, updatedAt])
+}
+
+model ApplicationEvent {
+  id            String               @id @default(cuid())
+  applicationId String
+  type          ApplicationEventType
+  actor         String
+  title         String
+  detail        String?
+  metadata      Json?
+  createdAt     DateTime             @default(now())
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+}
+
+model Notification {
+  id            String              @id @default(cuid())
+  userId        String
+  applicationId String?
+  type          NotificationType
+  status        NotificationStatus  @default(UNREAD)
+  title         String
+  body          String
+  actionUrl     String?
+  metadata      Json?
+  createdAt     DateTime            @default(now())
+  readAt        DateTime?
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application   Application?        @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, createdAt])
+}
+
+model PromptTemplate {
+  id          String              @id @default(cuid())
+  userId      String?
+  sourceId    String?
+  scope       PromptTemplateScope @default(GLOBAL)
+  name        String
+  taskKind    PromptTaskKind
+  model       String?
+  systemPrompt String
+  userPrompt  String
+  isActive    Boolean             @default(true)
+  variables   Json?
+  version     Int                 @default(1)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  user        User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source      JobSource?          @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([taskKind, isActive])
+}

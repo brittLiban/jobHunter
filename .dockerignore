@@ -2,6 +2,12 @@
 .git
 .gitignore
 
+# Node / Next.js
+node_modules
+.next
+coverage
+*.tsbuildinfo
+
 # Python cache
 __pycache__
 *.pyc

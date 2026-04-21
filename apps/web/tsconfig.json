@@ -1,0 +1,49 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "baseUrl": ".",
+    "incremental": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2022"
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "@jobhunter/core": [
+        "../../packages/core/src/index.ts"
+      ],
+      "@jobhunter/db": [
+        "../../packages/db/src/index.ts"
+      ],
+      "@jobhunter/automation": [
+        "../../packages/automation/src/index.ts"
+      ],
+      "@jobhunter/job-sources": [
+        "../../packages/job-sources/src/index.ts"
+      ],
+      "@jobhunter/llm": [
+        "../../packages/llm/src/index.ts"
+      ]
+    },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

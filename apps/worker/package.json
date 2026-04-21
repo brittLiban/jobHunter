@@ -1,0 +1,18 @@
+{
+  "name": "@jobhunter/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@jobhunter/automation": "file:../../packages/automation",
+    "@jobhunter/core": "file:../../packages/core",
+    "@jobhunter/job-sources": "file:../../packages/job-sources",
+    "@jobhunter/llm": "file:../../packages/llm"
+  }
+}
