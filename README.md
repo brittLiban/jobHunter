@@ -6,10 +6,7 @@ Core promise:
 
 > We find, prepare, fill, and submit job applications for you when possible. When a site needs you, we pause and make it as easy as possible to finish.
 
-This repository now contains two layers:
-
-- The new TypeScript SaaS scaffold in `apps/` and `packages/`
-- The original Python pipeline, preserved as a reference implementation for discovery, scoring prompts, form grounding, and Greenhouse safety behavior
+This repository now contains the actively developed TypeScript SaaS stack in `apps/` and `packages/`, plus the original Python implementation preserved as migration reference material.
 
 Supporting docs:
 
@@ -17,175 +14,159 @@ Supporting docs:
 - [Implementation TODOs](docs/TODO.md)
 - [Legacy Python operations](docs/OPERATIONS.md)
 
-## Reuse Audit
+## Current Status
 
-The existing Python system was not discarded. It is being reused as reference material for:
+Implemented in the TypeScript stack:
 
-- job discovery source patterns
-- job scoring and resume tailoring prompt shapes
-- conservative form-grounding rules
-- Playwright safety behavior for CAPTCHA, verification, and failed-submit checkpoints
+- polished marketing site at `/`
+- credential signup, login, logout, and cookie-backed sessions
+- authenticated app routes for dashboard, jobs, applications, profile, onboarding, and resumes
+- structured user profile and preferences persisted in Postgres via Prisma
+- resume upload persistence plus tailored `ResumeVersion` records
+- Prisma-backed dashboard, jobs, applications, and notifications pages
+- modular job ingestion adapters for Mock, Greenhouse, Ashby, Lever, and Workable
+- rules-first scoring pipeline with persisted `JobScore`, `TailoredDocument`, and `GeneratedAnswer` records
+- worker pipeline that discovers jobs, scores fit, prepares applications, tracks events, and raises notifications
+- Greenhouse Playwright apply flow with fail-closed checkpoint handling and structured autofill
+- manual-action workflow with prepared payload persistence and resume/reopen support
+- Dockerized `web`, `worker`, `migrate`, and `postgres` services
 
-The existing Streamlit + SQLite runtime is not the long-term SaaS path. The new SaaS path uses Next.js, Prisma, and Postgres while keeping the Python implementation available for comparison and migration work.
+Still intentionally incomplete:
 
-Legacy Docker files were preserved as:
+- OAuth providers and production auth hardening
+- queue/scheduler infrastructure beyond direct worker runs
+- broader ATS automation coverage beyond the current Greenhouse path
+- richer tests, observability, and outcome analytics
+- browser-extension-facing APIs beyond the current backend shape
 
-- `Dockerfile.legacy-python`
-- `docker-compose.legacy-python.yml`
-
-## Workspace Layout
+## Repository Layout
 
 ```text
 apps/
-  web/        Next.js marketing site + authenticated app shell + route handlers
-  worker/     background worker scaffold for ingestion, scoring, tailoring, and apply planning
+  web/        Next.js marketing site, authenticated app, and API routes
+  worker/     ingestion, scoring, tailoring, preparation, and automation pipeline
 
 packages/
-  core/       shared domain types, statuses, rules engine helpers, anti-repetition logic
-  db/         Prisma schema, initial SQL migration, Prisma config, seed data
-  llm/        modular scorer, resume tailor, and short-answer generator services
-  automation/ Playwright-facing checkpoint detection and submit planning
-  job-sources/mock adapter layer for ingestion
+  core/       shared domain types, API contracts, rules, and autofill helpers
+  db/         Prisma schema, migrations, seed data, queries, and pipeline persistence
+  llm/        job scoring, resume tailoring, and short-answer generation services
+  automation/ Playwright automation and checkpoint capture
+  job-sources source adapters for supported job feeds
 ```
 
-## Current Checkpoint
+## Safety Defaults
 
-Implemented in this checkpoint:
+The product can auto-submit when the application flow is simple and reliable, but the repository defaults are intentionally conservative for local development:
 
-- multi-package TypeScript workspace
-- polished marketing site at `/`
-- authenticated app shell routes at `/dashboard`, `/jobs`, `/applications`, `/profile`
-- shared job/application statuses and structured profile field definitions
-- initial anti-repetition utility for generated answers
-- Prisma schema for:
-  - users
-  - user profiles
-  - user preferences
-  - resumes
-  - resume versions
-  - job sources
-  - jobs
-  - job scores
-  - tailored documents
-  - generated answers
-  - applications
-  - application events
-  - notifications
-  - prompt templates
-- initial SQL migration in `packages/db/prisma/migrations/0001_init`
-- demo seed script
-- mock job source adapter
-- modular LLM service scaffolds for:
-  - job scoring
-  - resume tailoring
-  - short answers
-- automation planning layer that pauses on manual checkpoints instead of bypassing them
-- Dockerized `web`, `worker`, `migrate`, and `postgres` services
+- `JOBHUNTER_AUTO_APPLY_ENABLED=false`
+- `JOBHUNTER_AUTO_APPLY_DRY_RUN=true`
 
-Not implemented yet:
+That means a local worker run will discover, score, prepare, and track applications by default, but it will not live-submit to external sites unless you explicitly opt in.
 
-- real auth flow
-- onboarding persistence
-- resume uploads
-- real job source syncs beyond mock data
-- live Playwright application submission
-- dashboard data loaded from Postgres instead of demo fixtures
+The automation layer never attempts to bypass:
 
-Those are tracked in [docs/TODO.md](docs/TODO.md).
+- CAPTCHA
+- verification codes
+- security prompts
 
-## Prisma Models
+Those cases are saved as `needs_user_action` with prepared data and resume artifacts.
 
-Primary Prisma models introduced in `packages/db/prisma/schema.prisma`:
+## Environment Variables
 
-- `User`
-- `UserAccount`
-- `UserSession`
-- `UserProfile`
-- `UserPreference`
-- `Resume`
-- `ResumeVersion`
-- `JobSource`
-- `Job`
-- `JobScore`
-- `TailoredDocument`
-- `GeneratedAnswer`
-- `Application`
-- `ApplicationEvent`
-- `Notification`
-- `PromptTemplate`
+See [.env.example](.env.example) for the full template.
 
-The schema is Postgres-first and designed so a future browser extension can reuse the same profile, scoring, tailoring, and application APIs.
+Important variables:
+
+- `DATABASE_URL`
+- `AUTH_SECRET`
+- `JOBHUNTER_ENABLE_DEMO_SEED`
+- `JOBHUNTER_AUTO_APPLY_ENABLED`
+- `JOBHUNTER_AUTO_APPLY_DRY_RUN`
+- `PLAYWRIGHT_HEADLESS`
+- `OPENAI_API_KEY` and `OPENAI_MODEL` for OpenAI-backed LLM calls
+- `OLLAMA_URL` and `OLLAMA_MODEL` for Ollama-backed local LLM calls
+- `JOBHUNTER_GREENHOUSE_BOARDS`
+- `JOBHUNTER_ASHBY_BOARDS`
+- `JOBHUNTER_LEVER_SITES`
+- `JOBHUNTER_WORKABLE_COMPANIES`
+
+When no LLM provider is configured, the services fall back to deterministic mock output so the pipeline still runs.
 
 ## Local Development
 
-### 1. Install dependencies
+### Option 1: Docker Compose
 
-```powershell
-npm install
-```
-
-### 2. Generate Prisma client
-
-```powershell
-$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
-npm run db:generate
-```
-
-### 3. Verify the workspace
-
-```powershell
-npm run typecheck
-npm run build --workspace @jobhunter/web
-npm run start --workspace @jobhunter/worker
-```
-
-### 4. Apply migrations and seed demo data
-
-```powershell
-$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
-npm run db:deploy
-npm run db:seed
-```
-
-## Docker Compose
-
-The default `docker-compose.yml` now targets the SaaS stack:
-
-- `postgres`: primary database
-- `migrate`: applies Prisma migrations
-- `web`: Next.js app on port `3000`
-- `worker`: background processing scaffold
-
-Start the stack:
+Start the full local stack:
 
 ```powershell
 docker compose up --build
 ```
 
-If you need the older local Python pipeline instead, use:
+This starts:
 
-```powershell
-docker compose -f docker-compose.legacy-python.yml up --build
-```
+- `postgres`
+- `migrate`
+- `web`
+- `worker`
 
 Open:
 
-- marketing site and app shell: `http://localhost:3000`
+- marketing site and app UI: `http://localhost:3000`
 
-Environment defaults live in `.env.example`.
+### Option 2: Run Services Locally
 
-## Product Rules Embedded In The Architecture
+1. Install dependencies:
 
-The new shared domain layer already encodes the core product behavior:
+```powershell
+npm install
+```
 
-- structured profile facts are distinct from LLM-generated text
-- automation pauses on friction or uncertainty
-- auto-submit is allowed only when flow simplicity and confidence are high
-- CAPTCHA and verification handling is pause-only, never bypass
+2. Start Postgres with Docker:
+
+```powershell
+docker compose up -d postgres
+```
+
+3. Apply migrations against the local database:
+
+```powershell
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+npm run db:deploy
+```
+
+4. Optionally seed demo data:
+
+```powershell
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+$env:JOBHUNTER_ENABLE_DEMO_SEED="true"
+npm run db:seed
+```
+
+5. Verify and run the app:
+
+```powershell
+npm run typecheck
+npm run build --workspace @jobhunter/web
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+npm run start --workspace @jobhunter/worker
+npm run dev --workspace @jobhunter/web
+```
+
+## Demo Workflow
+
+With demo seed enabled, the repository creates:
+
+- a demo user
+- completed onboarding data
+- preferences and a default resume
+- seeded prompt templates
+- sample seeded application records
+
+The worker has also been validated locally against Docker Postgres with a seeded onboarded user. In the current configuration it discovers jobs, scores fit, prepares applications, and records tracker state without performing live submission by default.
 
 ## Legacy Python Reference
 
-The pre-existing Python implementation remains in the repository and is still useful when porting functionality:
+The legacy Python code remains in the repository as implementation reference, not as the primary runtime:
 
 - `scraper/`
 - `llm/`
@@ -193,19 +174,14 @@ The pre-existing Python implementation remains in the repository and is still us
 - `tracker/`
 - `dashboard/`
 
-These modules are the reference source for:
+It is still useful for:
 
 - ATS-specific heuristics
-- safety-first submit behavior
-- form question grounding
-- prompt structure
+- proven Greenhouse safety behavior
+- form grounding logic
+- prompt structure reference
 
-## Next Steps
+Legacy Docker files remain available as:
 
-Immediate next implementation slices:
-
-1. wire real auth and onboarding to the Prisma models
-2. replace demo dashboard data with Prisma-backed queries
-3. add resume upload and version management
-4. add real ingestion adapters after the mock source layer
-5. connect Playwright automation to the new application model and checkpoint flow
+- `Dockerfile.legacy-python`
+- `docker-compose.legacy-python.yml`

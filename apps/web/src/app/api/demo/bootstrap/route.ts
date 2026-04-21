@@ -6,11 +6,20 @@ export async function GET() {
   return NextResponse.json({
     demoDashboardSnapshot,
     structuredProfileFields,
-    nextServices: [
-      "auth-and-onboarding",
+    implementedServices: [
+      "credential-auth",
+      "onboarding",
       "resume-management",
+      "prisma-dashboard",
       "job-source-sync",
-      "playwright-applier",
+      "greenhouse-automation",
+      "manual-action-tracking",
+    ],
+    nextServices: [
+      "oauth-hardening",
+      "queue-scheduling",
+      "broader-ats-automation",
+      "integration-tests",
     ],
   });
 }

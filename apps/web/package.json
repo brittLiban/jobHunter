@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@jobhunter/core": "file:../../packages/core",
+    "@jobhunter/db": "file:../../packages/db",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"

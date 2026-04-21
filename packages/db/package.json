@@ -13,6 +13,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "latest"
+    "@jobhunter/core": "file:../core",
+    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/client": "latest",
+    "pg": "^8.20.0"
   }
 }

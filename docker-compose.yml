@@ -26,6 +26,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://jobhunter:jobhunter@postgres:5432/jobhunter}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       AUTH_SECRET: ${AUTH_SECRET:-replace-me}
+      JOBHUNTER_ENABLE_DEMO_SEED: ${JOBHUNTER_ENABLE_DEMO_SEED:-false}
     command: >
       sh -lc "npm install &&
       npm run db:generate &&
@@ -51,6 +52,16 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://jobhunter:jobhunter@postgres:5432/jobhunter}
       PLAYWRIGHT_HEADLESS: ${PLAYWRIGHT_HEADLESS:-true}
       JOBHUNTER_FIT_THRESHOLD: ${JOBHUNTER_FIT_THRESHOLD:-70}
+      JOBHUNTER_AUTO_APPLY_ENABLED: ${JOBHUNTER_AUTO_APPLY_ENABLED:-false}
+      JOBHUNTER_AUTO_APPLY_DRY_RUN: ${JOBHUNTER_AUTO_APPLY_DRY_RUN:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b-instruct-q4_K_M}
+      JOBHUNTER_GREENHOUSE_BOARDS: ${JOBHUNTER_GREENHOUSE_BOARDS:-stripe,figma}
+      JOBHUNTER_ASHBY_BOARDS: ${JOBHUNTER_ASHBY_BOARDS:-vercel,retool}
+      JOBHUNTER_LEVER_SITES: ${JOBHUNTER_LEVER_SITES:-box}
+      JOBHUNTER_WORKABLE_COMPANIES: ${JOBHUNTER_WORKABLE_COMPANIES:-}
     command: >
       sh -lc "npm install &&
       npm run db:generate &&
@@ -71,6 +82,7 @@ services:
       dockerfile: Dockerfile.web
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://jobhunter:jobhunter@postgres:5432/jobhunter}
+      JOBHUNTER_ENABLE_DEMO_SEED: ${JOBHUNTER_ENABLE_DEMO_SEED:-false}
     command: >
       sh -lc "npm install &&
       npm run db:generate &&

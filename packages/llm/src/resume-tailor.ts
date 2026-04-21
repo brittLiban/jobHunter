@@ -1,10 +1,10 @@
 import type { JobPosting, TailoredResumeDraft } from "@jobhunter/core";
 
 import { buildResumeTailorPrompt } from "./prompt-templates";
-import { FallbackLLMProvider, type LLMProvider } from "./job-scorer";
+import { createLLMProviderFromEnv, type LLMProvider } from "./provider";
 
 export class ResumeTailorService {
-  constructor(private readonly llm: LLMProvider = new FallbackLLMProvider()) {}
+  constructor(private readonly llm: LLMProvider = createLLMProviderFromEnv()) {}
 
   async tailor(input: {
     job: JobPosting;

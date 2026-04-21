@@ -9,7 +9,7 @@ JobHunter is being reshaped from a local Python pipeline into a full-stack SaaS 
 - applier: fill and submit predictable forms with Playwright
 - tracker: persist status, history, and required user actions
 
-The core safety rule is unchanged:
+The core safety rule remains:
 
 > Auto-submit only when the flow is simple and confidence is high. Pause immediately when friction or uncertainty appears.
 
@@ -17,136 +17,131 @@ The core safety rule is unchanged:
 
 ```text
 apps/
-  web/        Next.js product surface
-  worker/     background processing entry point
+  web/        Next.js marketing site, authenticated app, and API routes
+  worker/     background worker entry point
 
 packages/
-  core/       shared domain types and rules
-  db/         Prisma schema, migrations, seed
-  llm/        scorer, resume tailor, short-answer generator
-  automation/ Playwright checkpoint and submit-planning layer
-  job-sources adapter layer for ingestion
+  core/       shared product rules, API contracts, and autofill helpers
+  db/         Prisma schema, migrations, queries, pipeline persistence, and demo seed
+  llm/        scorer, resume tailor, and short-answer generator services
+  automation/ Playwright apply logic and checkpoint capture
+  job-sources source adapters for supported job feeds
 ```
 
-## Service Responsibilities
+## Current Service Responsibilities
 
 ### `apps/web`
 
-Current role:
+Current responsibilities:
 
 - marketing site
-- authenticated app shell routes
-- API placeholders for health and demo bootstrap
-
-Target role:
-
-- auth
-- onboarding
-- dashboard queries
-- resume management
-- notifications
-- user action resume flows
+- credential auth routes
+- onboarding and profile editing
+- resume upload handling
+- dashboard, jobs, applications, and notification surfaces
+- worker-trigger API route for authenticated users
 
 ### `apps/worker`
 
-Current role:
+Current responsibilities:
 
-- proof-of-shape worker that runs mock ingestion, scoring, tailoring, and submit planning
-
-Target role:
-
-- scheduled ingestion
-- job dedupe
-- threshold filtering
-- persistence of scores, tailored docs, and generated answers
-- Playwright automation orchestration
-- checkpoint capture and status transitions
+- discover jobs from configured adapters
+- persist job sources and discovered jobs
+- apply hard business rules and fit scoring
+- tailor resume content and generate short answers
+- prepare applications and tracker records
+- attempt Greenhouse automation only when explicitly enabled
 
 ### `packages/core`
 
-This package defines shared product rules that should not drift across services:
+Owns the cross-service product contract:
 
-- application statuses
+- statuses
 - manual action types
 - source kinds
-- structured profile fields
-- fit threshold helpers
-- auto-submit decision helper
-- anti-repetition tracker
-
-This package is where the product contract lives.
+- structured profile schema
+- onboarding and resume API schemas
+- rule evaluation helpers
+- structured autofill defaults
+- anti-repetition helpers
 
 ### `packages/db`
 
-This package owns:
+Owns:
 
-- Prisma schema
-- Prisma config for current Prisma 7 CLI behavior
-- initial SQL migration
+- Prisma schema and migrations
+- Prisma client creation
+- auth/session persistence
+- user workspace queries
+- worker persistence helpers
 - demo seed data
 
-Main tables/models:
+Primary models:
 
-- users and auth-linked records
-- structured user profile
-- preferences
-- resumes and resume versions
-- job sources and jobs
-- job scores
-- tailored documents
-- generated answers
-- applications and application events
-- notifications
-- prompt templates
+- `User`
+- `UserAccount`
+- `UserSession`
+- `UserProfile`
+- `UserPreference`
+- `Resume`
+- `ResumeVersion`
+- `JobSource`
+- `Job`
+- `JobScore`
+- `TailoredDocument`
+- `GeneratedAnswer`
+- `Application`
+- `ApplicationEvent`
+- `Notification`
+- `PromptTemplate`
 
 ### `packages/llm`
 
-The LLM layer is intentionally modular:
+The LLM layer is modular by task:
 
 - `JobScorerService`
 - `ResumeTailorService`
 - `ShortAnswerGeneratorService`
 
-Current implementation uses a fallback provider so the architecture is stable before wiring a live model provider.
+Provider support:
 
-Important constraint:
+- OpenAI via `OPENAI_API_KEY`
+- Ollama via `OLLAMA_URL`
+- mock fallback when no provider is configured
 
-- hard threshold and business rules remain outside the model
-- structured profile facts are not delegated to the model
-- generated text must remain truthful and grounded
+Hard rules remain outside the model, and structured profile facts are never delegated to the model.
 
 ### `packages/automation`
 
-This package contains the automation policy seam:
+Current automation responsibilities:
 
-- detect known manual checkpoints
-- decide whether an application should remain prepared or auto-submit
+- Greenhouse apply flow
+- structured field mapping
+- checkpoint detection
+- checkpoint artifact capture
+- fail-closed submit behavior
 
-This is where the Python Greenhouse safety behavior will be ported next.
+When automation cannot proceed safely, it persists prepared payloads and returns control to the tracker as `needs_user_action`.
 
 ### `packages/job-sources`
 
-Current state:
+Current adapters:
 
-- mock adapter only
-
-Target state:
-
+- Mock
 - Greenhouse
 - Ashby
 - Lever
 - Workable
-- company-site sources where practical
 
-Each source should normalize into the same job posting contract before scoring begins.
+Every adapter normalizes into the shared `JobPosting` contract before scoring begins.
 
 ## Status Flow
 
-Current shared status lifecycle:
+Primary lifecycle:
 
 1. `discovered`
 2. `scored`
-3. `queued`
+3. `skipped` or `queued`
 4. `prepared`
 5. `auto_submitted` or `needs_user_action`
 6. `submitted`
@@ -154,12 +149,14 @@ Current shared status lifecycle:
 8. `interview`
 9. `rejected` or `offer`
 
-The worker should only move an application into `auto_submitted` when:
+The worker may only move an application into `auto_submitted` when:
 
-- threshold rules passed
+- hard rules passed
+- fit threshold passed
+- confidence is high
 - the flow is simple and predictable
-- there is no checkpoint
-- confidence is high enough
+- no manual checkpoint is detected
+- live auto-apply is explicitly enabled
 
 The worker must move an application into `needs_user_action` when:
 
@@ -174,17 +171,17 @@ The worker must move an application into `needs_user_action` when:
 
 ### Structured user profile
 
-These values are owned by the user profile and should directly power autofill:
+These facts come directly from saved profile data and power autofill:
 
 - legal name
 - email
 - phone
-- location facts
+- city, state, country
 - LinkedIn, GitHub, portfolio
 - work authorization and sponsorship facts
 - veteran and disability values when provided
-- education details
-- experience years
+- school, degree, graduation date
+- years of experience
 - current company and title
 
 These are not LLM-generated.
@@ -193,7 +190,7 @@ These are not LLM-generated.
 
 The model can generate:
 
-- fit explanation
+- fit explanations
 - tailored summary and bullets
 - short application answers
 
@@ -201,19 +198,18 @@ The model must not invent experience or replace structured profile facts.
 
 ## Legacy Python Layer
 
-The old Python code remains because it already contains practical behavior worth porting:
+The old Python code remains as reference implementation for:
 
-- `submitter/greenhouse.py` has the best current checkpoint and fail-closed behavior
-- `llm/form_resolver.py` has grounding ideas worth carrying forward
-- discovery modules already show the target source mix
+- Greenhouse checkpoint behavior in `submitter/greenhouse.py`
+- grounding logic in `llm/form_resolver.py`
+- source-specific discovery patterns in `scraper/`
 
-That code is now reference implementation, not the primary app surface.
+It is no longer the primary runtime path.
 
-## Immediate Next Engineering Steps
+## Next Architecture Steps
 
-1. Add real auth and onboarding flows in `apps/web`
-2. Replace demo fixtures with Prisma-backed reads
-3. Persist worker results into Postgres
-4. Add file-backed resume uploads and tailored resume versions
-5. Port Greenhouse Playwright logic into `packages/automation`
-6. Add notifications and resume/reopen actions for blocked applications
+1. Add queue-backed orchestration and scheduling around the worker
+2. Expand automation coverage beyond Greenhouse
+3. Harden auth for production use cases
+4. Add better observability and integration testing
+5. Formalize extension-oriented backend APIs

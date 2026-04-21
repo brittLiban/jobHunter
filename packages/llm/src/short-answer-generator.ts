@@ -3,11 +3,11 @@ import type { GeneratedAnswerSet, JobPosting, StructuredProfile, TailoredResumeD
 import { PhraseVariationTracker } from "@jobhunter/core";
 
 import { buildShortAnswerPrompt } from "./prompt-templates";
-import { FallbackLLMProvider, type LLMProvider } from "./job-scorer";
+import { createLLMProviderFromEnv, type LLMProvider } from "./provider";
 
 export class ShortAnswerGeneratorService {
   constructor(
-    private readonly llm: LLMProvider = new FallbackLLMProvider(),
+    private readonly llm: LLMProvider = createLLMProviderFromEnv(),
     private readonly variationTracker = new PhraseVariationTracker(),
   ) {}
 

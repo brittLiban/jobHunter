@@ -53,12 +53,14 @@ export const demoDashboardSnapshot: DashboardSnapshot = {
   ],
   notifications: [
     {
+      id: "notification_1",
       type: "success",
       title: "11 applications auto-submitted today",
       message: "Simple flows were completed automatically and confirmation states were captured.",
       createdAt: "2026-04-21T09:20:00.000Z",
     },
     {
+      id: "notification_2",
       type: "action_required",
       title: "Stripe needs manual completion",
       message: "A verification prompt interrupted the apply flow. Resume data is preserved for a quick handoff.",

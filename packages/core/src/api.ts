@@ -1,0 +1,118 @@
+import { z } from "zod";
+
+import {
+  dashboardSnapshotSchema,
+  generatedAnswerSchema,
+  jobPreferencesSchema,
+  jobPostingSchema,
+  structuredProfileSchema,
+} from "./domain";
+
+export const signupInputSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  fullName: z.string().min(1),
+});
+
+export const loginInputSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export const onboardingInputSchema = z.object({
+  profile: structuredProfileSchema,
+  preferences: jobPreferencesSchema,
+});
+
+export const resumeUploadInputSchema = z.object({
+  label: z.string().min(1),
+  baseText: z.string().min(50),
+  setAsDefault: z.boolean().default(false),
+});
+
+export const reopenApplicationInputSchema = z.object({
+  applicationId: z.string().min(1),
+});
+
+export const jobsResponseSchema = z.object({
+  jobs: z.array(jobPostingSchema.extend({
+    fitScore: z.number().int().min(0).max(100).nullable(),
+    status: z.string(),
+    decision: z.enum(["apply", "skip"]).nullable(),
+  })),
+});
+
+export const applicationsResponseSchema = z.object({
+  applications: z.array(
+    z.object({
+      id: z.string(),
+      company: z.string(),
+      title: z.string(),
+      source: z.string(),
+      fitScore: z.number().int().min(0).max(100).nullable(),
+      status: z.string(),
+      blockingReason: z.string().nullable(),
+      lastAutomationUrl: z.string().nullable(),
+      preparedPayload: z.unknown().nullable(),
+      automationSession: z.unknown().nullable(),
+      updatedAt: z.string(),
+      generatedAnswers: z.array(generatedAnswerSchema),
+      events: z.array(
+        z.object({
+          id: z.string(),
+          type: z.string(),
+          actor: z.string(),
+          title: z.string(),
+          detail: z.string().nullable(),
+          createdAt: z.string(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export const notificationsResponseSchema = z.object({
+  notifications: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      status: z.string(),
+      title: z.string(),
+      body: z.string(),
+      actionUrl: z.string().nullable(),
+      createdAt: z.string(),
+    }),
+  ),
+});
+
+export const profileResponseSchema = z.object({
+  onboardingComplete: z.boolean(),
+  profile: structuredProfileSchema.partial(),
+  preferences: jobPreferencesSchema.partial(),
+  resumes: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      originalFileName: z.string(),
+      storageKey: z.string(),
+      isDefault: z.boolean(),
+      createdAt: z.string(),
+      versions: z.array(
+        z.object({
+          id: z.string(),
+          label: z.string(),
+          createdAt: z.string(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export const dashboardResponseSchema = z.object({
+  snapshot: dashboardSnapshotSchema,
+});
+
+export type SignupInput = z.infer<typeof signupInputSchema>;
+export type LoginInput = z.infer<typeof loginInputSchema>;
+export type OnboardingInput = z.infer<typeof onboardingInputSchema>;
+export type ResumeUploadInput = z.infer<typeof resumeUploadInputSchema>;

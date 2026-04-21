@@ -1,7 +1,7 @@
-import { demoDashboardSnapshot } from "@jobhunter/core";
-
 import { AppShell } from "@/components/app-shell";
 import { StatusPill } from "@/components/status-pill";
+import { requireOnboardedUser } from "@/lib/auth";
+import { loadApplicationsPageData } from "@/lib/page-data";
 
 const guardrails = [
   "Auto-submit only when the form flow is simple and predictable.",
@@ -10,11 +10,15 @@ const guardrails = [
   "Never bypass security protections or guess unknown required answers.",
 ] as const;
 
-export default function ApplicationsPage() {
+export default async function ApplicationsPage() {
+  const user = await requireOnboardedUser();
+  const applications = await loadApplicationsPageData(user.id);
+
   return (
     <AppShell
       title="Applications"
       description="Prepared packets, autonomous submissions, and manual checkpoints live in one queue with explicit status history."
+      userName={user.fullName ?? user.email}
     >
       <section className="app-two-column">
         <article className="app-card">
@@ -25,19 +29,34 @@ export default function ApplicationsPage() {
             </div>
           </div>
           <div className="list-table">
-            {demoDashboardSnapshot.applications.map((application) => (
+            {applications.length === 0 ? <div className="list-row"><div><p>No applications yet</p><span>The worker has not prepared any job applications.</span></div></div> : null}
+            {applications.map((application) => (
               <div key={application.id} className="list-row">
                 <div>
                   <p>{application.company}</p>
-                  <span>{application.role}</span>
+                  <span>{application.title}</span>
                 </div>
                 <div>
-                  <p>{application.generatedAnswersCount} answers</p>
-                  <span>{application.fitScore}/100 fit</span>
+                  <p>{application.generatedAnswers.length} answers</p>
+                  <span>{application.fitScore !== null ? `${application.fitScore}/100 fit` : "Unscored"}</span>
                 </div>
                 <div className="row-status">
-                  <StatusPill status={application.status} />
+                  <StatusPill status={application.status as Parameters<typeof StatusPill>[0]["status"]} />
                 </div>
+                {application.status === "needs_user_action" ? (
+                  <div className="list-actions">
+                    {application.lastAutomationUrl ? (
+                      <a href={application.lastAutomationUrl} className="button button-secondary">
+                        Resume
+                      </a>
+                    ) : null}
+                    <form action={`/api/applications/${application.id}/reopen`} method="post">
+                      <button type="submit" className="button button-secondary">
+                        Reopen
+                      </button>
+                    </form>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -56,6 +75,25 @@ export default function ApplicationsPage() {
             ))}
           </ul>
         </article>
+      </section>
+
+      <section className="app-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Event History</p>
+            <h2>Latest lifecycle events</h2>
+          </div>
+        </div>
+        <div className="stack-list">
+          {applications.flatMap((application) =>
+            application.events.slice(0, 1).map((event) => (
+              <div key={event.id} className="stack-item">
+                <p>{application.company} · {event.title}</p>
+                <span>{event.detail ?? event.type}</span>
+              </div>
+            )),
+          )}
+        </div>
       </section>
     </AppShell>
   );

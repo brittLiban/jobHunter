@@ -1,24 +1,18 @@
-import type { JobPosting, JobSourceKind } from "@jobhunter/core";
+import type { JobPosting } from "@jobhunter/core";
 
-export interface JobSourceAdapter {
-  kind: JobSourceKind;
-  name: string;
-  discoverJobs(): Promise<JobPosting[]>;
-}
+import { type JobSourceAdapter, normalizeJobPosting, type SourceDiscoveryTarget } from "./base";
 
 export class MockJobSource implements JobSourceAdapter {
-  kind: JobSourceKind = "mock";
-  name = "Mock Demo Feed";
+  kind = "mock" as const;
 
-  async discoverJobs(): Promise<JobPosting[]> {
+  async discoverJobs(target: SourceDiscoveryTarget): Promise<JobPosting[]> {
     const discoveredAt = new Date().toISOString();
-
-    return [
+    const jobs: JobPosting[] = [
       {
         id: "mock_1",
         externalId: "mock-vercel-integrations",
         sourceKind: "mock",
-        sourceName: this.name,
+        sourceName: target.sourceName,
         company: "Vercel",
         title: "Software Engineer, Integrations",
         location: "Remote - United States",
@@ -36,7 +30,7 @@ export class MockJobSource implements JobSourceAdapter {
         id: "mock_2",
         externalId: "mock-figma-backend",
         sourceKind: "mock",
-        sourceName: this.name,
+        sourceName: target.sourceName,
         company: "Figma",
         title: "Backend Engineer",
         location: "Seattle, WA",
@@ -54,7 +48,7 @@ export class MockJobSource implements JobSourceAdapter {
         id: "mock_3",
         externalId: "mock-stripe-new-grad",
         sourceKind: "mock",
-        sourceName: this.name,
+        sourceName: target.sourceName,
         company: "Stripe",
         title: "Software Engineer, New Grad",
         location: "Remote within U.S.",
@@ -69,5 +63,7 @@ export class MockJobSource implements JobSourceAdapter {
         discoveredAt,
       },
     ];
+
+    return jobs.map((job) => normalizeJobPosting(job));
   }
 }

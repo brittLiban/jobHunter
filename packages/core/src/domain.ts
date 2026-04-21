@@ -142,6 +142,7 @@ export const promptTemplateSchema = z.object({
 });
 
 export const notificationSchema = z.object({
+  id: z.string().min(1),
   type: notificationTypeSchema,
   title: z.string().min(1),
   message: z.string().min(1),

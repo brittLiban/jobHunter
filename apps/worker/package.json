@@ -12,6 +12,7 @@
   "dependencies": {
     "@jobhunter/automation": "file:../../packages/automation",
     "@jobhunter/core": "file:../../packages/core",
+    "@jobhunter/db": "file:../../packages/db",
     "@jobhunter/job-sources": "file:../../packages/job-sources",
     "@jobhunter/llm": "file:../../packages/llm"
   }

@@ -159,6 +159,10 @@ h3 {
   border-color: var(--border);
 }
 
+.button-full {
+  width: 100%;
+}
+
 .hero-metrics,
 .feature-grid,
 .comparison-grid,
@@ -396,6 +400,17 @@ h3 {
   color: var(--muted);
 }
 
+.sidebar-user {
+  margin-bottom: 20px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.sidebar-user p:last-child {
+  margin: 0;
+}
+
 .app-nav {
   display: grid;
   gap: 8px;
@@ -417,6 +432,10 @@ h3 {
   padding: 16px;
   border-radius: var(--radius-lg);
   background: rgba(13, 95, 102, 0.1);
+}
+
+.sidebar-logout {
+  margin-top: 18px;
 }
 
 .app-main {
@@ -450,6 +469,12 @@ h3 {
   justify-self: end;
 }
 
+.list-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .status-auto_submitted {
   color: var(--success);
 }
@@ -479,6 +504,65 @@ h3 {
   padding: 28px;
 }
 
+.onboarding-card {
+  width: min(1040px, 100%);
+}
+
+.stack-form,
+.profile-form {
+  display: grid;
+  gap: 16px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.form-section {
+  display: grid;
+  gap: 14px;
+}
+
+.form-section h2 {
+  font-size: 1.2rem;
+}
+
+.form-field {
+  display: grid;
+  gap: 8px;
+}
+
+.form-field span {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text);
+  font: inherit;
+}
+
+.checkbox-field {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.form-error {
+  margin: 0 0 10px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
 @media (max-width: 980px) {
   .hero,
   .feature-grid,
@@ -504,6 +588,10 @@ h3 {
 
   .app-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 

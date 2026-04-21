@@ -8,29 +8,10 @@ import type {
 import { meetsFitThreshold } from "@jobhunter/core";
 
 import { buildJobScorerPrompt } from "./prompt-templates";
-
-export interface LLMProvider {
-  generateObject<T>(input: {
-    systemPrompt: string;
-    userPrompt: string;
-    fallback: T;
-  }): Promise<T>;
-}
-
-export class FallbackLLMProvider implements LLMProvider {
-  async generateObject<T>(input: {
-    systemPrompt: string;
-    userPrompt: string;
-    fallback: T;
-  }): Promise<T> {
-    void input.systemPrompt;
-    void input.userPrompt;
-    return input.fallback;
-  }
-}
+import { createLLMProviderFromEnv, MockLLMProvider, type LLMProvider } from "./provider";
 
 export class JobScorerService {
-  constructor(private readonly llm: LLMProvider = new FallbackLLMProvider()) {}
+  constructor(private readonly llm: LLMProvider = createLLMProviderFromEnv()) {}
 
   async score(input: {
     job: JobPosting;
@@ -61,6 +42,8 @@ export class JobScorerService {
     });
   }
 }
+
+export { MockLLMProvider };
 
 function heuristicBreakdown(description: string, resumeText: string): WeightedBreakdown {
   const scoreFromTerms = (terms: string[]): number => {

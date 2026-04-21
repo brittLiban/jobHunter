@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+
 import {
   AccountProvider,
   ApplicationEventType,
@@ -6,25 +9,34 @@ import {
   JobSourceKind,
   NotificationStatus,
   NotificationType,
-  PrismaClient,
   PromptTaskKind,
   PromptTemplateScope,
   TailoredDocumentKind,
   WorkMode,
 } from "@prisma/client";
+import { createPrismaClient } from "../src/client";
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
+const DEMO_ONBOARDING_COMPLETED_AT = new Date("2026-04-01T12:00:00.000Z");
+const DEMO_RESUME_STORAGE_KEY = "resumes/demo/software-engineer-base.pdf";
 
 async function main(): Promise<void> {
+  if (process.env.JOBHUNTER_ENABLE_DEMO_SEED !== "true") {
+    console.log("Skipping demo seed. Set JOBHUNTER_ENABLE_DEMO_SEED=true to load demo data.");
+    return;
+  }
+
   const user = await prisma.user.upsert({
     where: { email: "demo@jobhunter.local" },
     update: {
       fullName: "Demo Candidate",
+      onboardingCompletedAt: DEMO_ONBOARDING_COMPLETED_AT,
     },
     create: {
       email: "demo@jobhunter.local",
       fullName: "Demo Candidate",
       passwordHash: "demo-password-hash",
+      onboardingCompletedAt: DEMO_ONBOARDING_COMPLETED_AT,
       accounts: {
         create: {
           provider: AccountProvider.CREDENTIALS,
@@ -33,6 +45,8 @@ async function main(): Promise<void> {
       },
     },
   });
+
+  await ensureDemoResumeFile();
 
   await prisma.userProfile.upsert({
     where: { userId: user.id },
@@ -113,7 +127,7 @@ async function main(): Promise<void> {
     update: {
       label: "Software Engineer Base Resume",
       baseText: "Software engineer with backend, automation, and cloud deployment experience.",
-      storageKey: "resumes/demo/software-engineer-base.pdf",
+      storageKey: DEMO_RESUME_STORAGE_KEY,
       isDefault: true,
     },
     create: {
@@ -122,7 +136,7 @@ async function main(): Promise<void> {
       label: "Software Engineer Base Resume",
       originalFileName: "demo-software-engineer.pdf",
       mimeType: "application/pdf",
-      storageKey: "resumes/demo/software-engineer-base.pdf",
+      storageKey: DEMO_RESUME_STORAGE_KEY,
       baseText: "Software engineer with backend, automation, and cloud deployment experience.",
       isDefault: true,
     },
@@ -549,6 +563,28 @@ async function main(): Promise<void> {
         },
       }),
     ),
+  );
+}
+
+async function ensureDemoResumeFile() {
+  const resumePath = resolve(process.cwd(), "..", "..", "data", DEMO_RESUME_STORAGE_KEY);
+  await mkdir(dirname(resumePath), { recursive: true });
+  await writeFile(
+    resumePath,
+    [
+      "%PDF-1.4",
+      "% JobHunter demo resume placeholder",
+      "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+      "2 0 obj << /Type /Pages /Count 1 /Kids [3 0 R] >> endobj",
+      "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj",
+      "4 0 obj << /Length 49 >> stream",
+      "BT /F1 12 Tf 72 720 Td (JobHunter Demo Resume) Tj ET",
+      "endstream endobj",
+      "trailer << /Root 1 0 R >>",
+      "%%EOF",
+      "",
+    ].join("\n"),
+    "utf8",
   );
 }
 
