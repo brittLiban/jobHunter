@@ -71,6 +71,22 @@ The automation layer never attempts to bypass:
 
 Those cases are saved as `needs_user_action` with prepared data and resume artifacts.
 
+## Supported Sources
+
+Current ingestion adapters:
+
+- Mock
+- Greenhouse
+- Ashby
+- Lever
+- Workable
+
+Current automated submission path:
+
+- Greenhouse only
+
+Everything else can still be discovered, scored, filtered, tailored, and tracked, but not all sources can be fully auto-submitted yet.
+
 ## Environment Variables
 
 See [.env.example](.env.example) for the full template.
@@ -162,7 +178,41 @@ With demo seed enabled, the repository creates:
 - seeded prompt templates
 - sample seeded application records
 
+Demo credentials:
+
+- email: `demo@jobhunter.local`
+- password: `DemoPass123!`
+
 The worker has also been validated locally against Docker Postgres with a seeded onboarded user. In the current configuration it discovers jobs, scores fit, prepares applications, and records tracker state without performing live submission by default.
+
+## Status Meanings
+
+The main application states a user will see are:
+
+- `queued`: the job is eligible and waiting for worker processing
+- `prepared`: tailored materials and prepared payloads are saved
+- `needs_user_action`: automation paused because the flow was uncertain or blocked
+- `auto_submitted`: automation detected a clear successful submission state
+- `submitted`: the application is complete, whether automatically or manually
+
+When an application enters `needs_user_action`, the system is expected to preserve:
+
+- the latest application URL
+- tailored resume and answer artifacts
+- prepared structured defaults
+- checkpoint screenshots or page captures when available
+
+Use the Applications page to either resume the interrupted flow or reopen the application for another worker attempt.
+
+## Important Limitations
+
+Current behavior a user should know before relying on the system:
+
+- local development defaults are intentionally non-submitting
+- automation does not bypass CAPTCHA, email codes, or security checks
+- Greenhouse is the only ATS with an implemented submit path today
+- if no LLM provider is configured, the pipeline uses deterministic mock output rather than live model calls
+- the worker currently runs on demand rather than from a production queue or scheduler
 
 ## Legacy Python Reference
 

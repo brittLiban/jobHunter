@@ -10,6 +10,14 @@ const guardrails = [
   "Never bypass security protections or guess unknown required answers.",
 ] as const;
 
+const statusGuide = [
+  "queued: job passed thresholding and is waiting for the next preparation or automation attempt",
+  "prepared: tailored resume content and answers were saved and the application packet is ready",
+  "needs_user_action: the system paused on friction and preserved state so you can finish quickly",
+  "auto_submitted: automation reached a clear confirmation state and completed the submission",
+  "submitted: the application is complete, whether manually or automatically",
+] as const;
+
 export default async function ApplicationsPage() {
   const user = await requireOnboardedUser();
   const applications = await loadApplicationsPageData(user.id);
@@ -29,7 +37,14 @@ export default async function ApplicationsPage() {
             </div>
           </div>
           <div className="list-table">
-            {applications.length === 0 ? <div className="list-row"><div><p>No applications yet</p><span>The worker has not prepared any job applications.</span></div></div> : null}
+            {applications.length === 0 ? (
+              <div className="list-row">
+                <div>
+                  <p>No applications yet</p>
+                  <span>The worker has not prepared any job applications.</span>
+                </div>
+              </div>
+            ) : null}
             {applications.map((application) => (
               <div key={application.id} className="list-row">
                 <div>
@@ -88,12 +103,26 @@ export default async function ApplicationsPage() {
           {applications.flatMap((application) =>
             application.events.slice(0, 1).map((event) => (
               <div key={event.id} className="stack-item">
-                <p>{application.company} · {event.title}</p>
+                <p>{application.company} - {event.title}</p>
                 <span>{event.detail ?? event.type}</span>
               </div>
             )),
           )}
         </div>
+      </section>
+
+      <section className="app-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Status Guide</p>
+            <h2>What these states mean</h2>
+          </div>
+        </div>
+        <ul className="flat-list">
+          {statusGuide.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
       </section>
     </AppShell>
   );

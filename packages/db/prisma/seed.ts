@@ -1,3 +1,4 @@
+import { randomBytes, scryptSync } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
@@ -19,6 +20,8 @@ import { createPrismaClient } from "../src/client";
 const prisma = createPrismaClient();
 const DEMO_ONBOARDING_COMPLETED_AT = new Date("2026-04-01T12:00:00.000Z");
 const DEMO_RESUME_STORAGE_KEY = "resumes/demo/software-engineer-base.pdf";
+const DEMO_EMAIL = "demo@jobhunter.local";
+const DEMO_PASSWORD = "DemoPass123!";
 
 async function main(): Promise<void> {
   if (process.env.JOBHUNTER_ENABLE_DEMO_SEED !== "true") {
@@ -27,20 +30,21 @@ async function main(): Promise<void> {
   }
 
   const user = await prisma.user.upsert({
-    where: { email: "demo@jobhunter.local" },
+    where: { email: DEMO_EMAIL },
     update: {
       fullName: "Demo Candidate",
+      passwordHash: hashPassword(DEMO_PASSWORD),
       onboardingCompletedAt: DEMO_ONBOARDING_COMPLETED_AT,
     },
     create: {
-      email: "demo@jobhunter.local",
+      email: DEMO_EMAIL,
       fullName: "Demo Candidate",
-      passwordHash: "demo-password-hash",
+      passwordHash: hashPassword(DEMO_PASSWORD),
       onboardingCompletedAt: DEMO_ONBOARDING_COMPLETED_AT,
       accounts: {
         create: {
           provider: AccountProvider.CREDENTIALS,
-          providerAccountId: "demo@jobhunter.local",
+          providerAccountId: DEMO_EMAIL,
         },
       },
     },
@@ -586,6 +590,12 @@ async function ensureDemoResumeFile() {
     ].join("\n"),
     "utf8",
   );
+}
+
+function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  const digest = scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${digest}`;
 }
 
 main()

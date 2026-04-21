@@ -1,236 +1,156 @@
 # Operations
 
-## Runtime Modes
+## Recommended Runtime
 
-There are two normal ways to run Job Hunter:
+The recommended runtime is now the TypeScript SaaS stack:
 
-- Local Python processes on Windows
-- Docker Compose services
+- `apps/web` for the marketing site, authenticated UI, and API routes
+- `apps/worker` for ingestion, scoring, tailoring, preparation, and automation
+- Postgres via Prisma for persistence
 
-The behavior should be the same in both cases:
+The legacy Python stack is still present as reference material, but it is no longer the primary operating path.
 
-- run discovery and scoring
-- generate tailoring for high-priority jobs
-- auto-apply eligible Greenhouse jobs
-- repeat every 1 hour when running through `scheduler.py`
+## Safe Defaults
 
-## Local Windows Runbook
+Current operational defaults are intentionally conservative:
 
-### Start the scheduler
+- `JOBHUNTER_AUTO_APPLY_ENABLED=false`
+- `JOBHUNTER_AUTO_APPLY_DRY_RUN=true`
+
+That means the worker can discover, score, tailor, and prepare applications without live-submitting to external sites unless you explicitly opt in.
+
+The system must pause rather than bypass:
+
+- CAPTCHA
+- verification codes
+- security prompts
+- failed uploads
+- unknown or ambiguous form states
+
+## Local Runbook
+
+### Start Postgres
 
 ```powershell
-python scheduler.py
+docker compose up -d postgres
 ```
 
-This runs forever and sleeps based on `SCHEDULER_INTERVAL_HOURS` after each completed cycle.
-
-### Start the dashboard
+### Apply migrations
 
 ```powershell
-python -m streamlit run dashboard/app.py --server.headless true --server.address 127.0.0.1 --server.port 8501
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+npm run db:deploy
 ```
 
-### Run a single cycle manually
+### Seed demo data
 
 ```powershell
-python main.py
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+$env:JOBHUNTER_ENABLE_DEMO_SEED="true"
+npm run db:seed
 ```
 
-## Current Scheduler / Auto-Apply Settings
+Demo credentials after seeding:
 
-The defaults in [config.py](../config.py) are:
+- email: `demo@jobhunter.local`
+- password: `DemoPass123!`
 
-- `SCHEDULER_INTERVAL_HOURS = 1`
-- `AUTO_APPLY_ENABLED = True`
-- `AUTO_APPLY_DRY_RUN = False`
-- `AUTO_APPLY_MIN_SCORE = 80`
+### Run the web app
 
-The Docker scheduler service in [docker-compose.yml](../docker-compose.yml) also pins:
+```powershell
+npm run dev --workspace @jobhunter/web
+```
 
-- `SCHEDULER_INTERVAL_HOURS=1`
-- `AUTO_APPLY_ENABLED=true`
-- `AUTO_APPLY_DRY_RUN=false`
+### Run the worker once
 
-## How Auto-Apply Actually Runs
+```powershell
+$env:DATABASE_URL="postgresql://jobhunter:jobhunter@localhost:5432/jobhunter"
+npm run start --workspace @jobhunter/worker
+```
 
-Auto-apply is not a separate daemon. It is the final phase of each pipeline cycle in [main.py](../main.py):
+### Build verification
 
-1. discover jobs
-2. insert new jobs
-3. extract and score unprocessed jobs
-4. tailor priority jobs
-5. auto-apply eligible jobs
+```powershell
+npm run typecheck
+npm run build --workspace @jobhunter/web
+```
 
-An application is eligible for queue pickup when it is:
+## Docker Compose Runbook
 
-- `status = 'scored'`
-- recommended to apply
-- at or above the configured score threshold
+Run the full stack:
 
-Submission is dispatched through [submitter/service.py](../submitter/service.py). Unsupported sources fail closed.
+```powershell
+docker compose up --build
+```
 
-## Supported Submission Paths
+Services:
 
-Currently supported:
+- `postgres`
+- `migrate`
+- `web`
+- `worker`
+
+## Source Coverage
+
+Current source ingestion coverage:
+
+- Mock
+- Greenhouse
+- Ashby
+- Lever
+- Workable
+
+Current automated submission coverage:
 
 - Greenhouse
 
-Not currently supported:
+## What `needs_user_action` Means
 
-- Lever
-- Ashby
-- Workable
-- generic company-site forms
+An application should enter `needs_user_action` when automation hits friction such as:
 
-This means the pipeline can discover and score jobs from many sources, but only a subset can be auto-submitted.
+- CAPTCHA
+- email or security verification
+- upload failures
+- unknown required fields
+- unusual form structure
+- uncertain submit state
 
-## Profile and Resume Files
+When this happens, the system should preserve:
 
-The active software-engineer profile currently uses:
+- latest application URL
+- tailored resume and answer artifacts
+- structured autofill data
+- checkpoint artifacts when captured
 
-- prompt text: [../profiles/liban_britt_software_engineer.md](../profiles/liban_britt_software_engineer.md)
-- upload file: `C:\Users\liban\Desktop\01_Career\Resumes\Liban_Britt_SWE_Current.docx`
+The user can then resume the live application or reopen it from the app dashboard.
 
-The prompt text is what the LLM sees for extraction, scoring, and tailoring. The `.docx` file is what Playwright uploads during actual applications.
+## Important Environment Variables
 
-## Fully Autonomous Question Handling
+- `DATABASE_URL`
+- `AUTH_SECRET`
+- `JOBHUNTER_ENABLE_DEMO_SEED`
+- `JOBHUNTER_AUTO_APPLY_ENABLED`
+- `JOBHUNTER_AUTO_APPLY_DRY_RUN`
+- `PLAYWRIGHT_HEADLESS`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `OLLAMA_URL`
+- `OLLAMA_MODEL`
+- `JOBHUNTER_GREENHOUSE_BOARDS`
+- `JOBHUNTER_ASHBY_BOARDS`
+- `JOBHUNTER_LEVER_SITES`
+- `JOBHUNTER_WORKABLE_COMPANIES`
 
-The Greenhouse submitter can now answer company-specific recurring questions from profile JSON without code changes.
+## Legacy Python Notes
 
-Store them in:
+The Python implementation still matters as reference for:
 
-- `preferences_json.application_form_defaults.custom_question_answers`
+- Greenhouse safety behavior in `submitter/greenhouse.py`
+- form grounding logic in `llm/form_resolver.py`
+- source-specific discovery heuristics in `scraper/`
 
-Each entry should include:
-
-- `label`: the question label text or a distinctive substring
-- `value`: the answer to fill
-- `kind`: `text` or `select`
-
-Example:
-
-```json
-[
-  {
-    "label": "Have you previously applied to Amazon or any Amazon subsidiary?",
-    "value": "No",
-    "kind": "select"
-  },
-  {
-    "label": "Are you subject to a non-competition agreement",
-    "value": "No",
-    "kind": "select"
-  }
-]
-```
-
-This is the right place for factual employment-history, immigration, relocation, and company-specific application questions that cannot be inferred from a resume safely.
-
-## Ollama-Assisted Form Resolution
-
-The Greenhouse submitter also uses the local Ollama model to help with form
-filling, but only in a constrained way:
-
-- it can map semantically similar labels to existing stored profile fields
-- it can reuse generated fit text for short open-text motivation questions
-- it records resolver attempts in the apply payload for debugging
-- it does not guess facts that are not already stored
-- every accepted LLM answer is post-validated against stored profile values,
-  `custom_question_answers`, or generated materials before autofill
-- stored profile answers must match the relevant field label, not just the same raw value
-- generated materials are only allowed into open-text fit/motivation prompts
-
-Questions that must be explicitly stored in profile defaults or
-`custom_question_answers` include:
-
-- work authorization
-- sponsorship or immigration support
-- citizenship
-- prior company applications
-- prior employment history
-- relocation preference
-- non-compete restrictions
-- company-familiarity questions
-
-This keeps the system autonomous without turning it into a hallucinating form bot.
-
-## Reset Job Data
-
-To delete all current jobs and applications and start fresh while preserving
-the stored profile:
+If you intentionally need the legacy runtime, use:
 
 ```powershell
-@'
-from database.db import reset_job_data
-reset_job_data()
-'@ | python -
+docker compose -f docker-compose.legacy-python.yml up --build
 ```
-
-After a reset, restart `scheduler.py` or run `python main.py` once to repopulate
-the database from discovery.
-
-## Logs
-
-If you run locally, write stdout/stderr to files under `logs/` so you can inspect cycles later.
-
-Typical files:
-
-- `logs/scheduler.log`
-- `logs/scheduler.err`
-- `logs/dashboard.log`
-- `logs/dashboard.err`
-
-Useful commands:
-
-```powershell
-Get-Content logs\scheduler.log -Tail 80
-Get-Content logs\scheduler.err -Tail 80
-```
-
-## Verification Checks
-
-### Confirm the scheduler process is running
-
-```powershell
-Get-CimInstance Win32_Process |
-  Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -match 'scheduler.py' } |
-  Select-Object ProcessId, CommandLine
-```
-
-### Confirm the dashboard is listening on port 8501
-
-```powershell
-netstat -ano | Select-String ':8501'
-```
-
-### Confirm Ollama is reachable
-
-```powershell
-Invoke-WebRequest -Uri 'http://127.0.0.1:11434/api/tags' -UseBasicParsing
-```
-
-### Check auto-apply queue size in SQLite
-
-```powershell
-@'
-import sqlite3
-conn = sqlite3.connect("data/jobs.db")
-sql = """
-SELECT COUNT(*)
-FROM applications
-WHERE status = 'scored'
-  AND COALESCE(apply_decision, 0) = 1
-  AND COALESCE(fit_score, 0) >= 80
-"""
-print(conn.execute(sql).fetchone()[0])
-'@ | python -
-```
-
-## Failure Modes to Watch
-
-- Ollama unavailable: extraction/scoring/tailoring will fail.
-- Playwright browser missing: auto-apply will fail before submission.
-- Resume upload file missing: Greenhouse submission will fail closed.
-- Scheduler not running: nothing happens every hour regardless of config values.
-- Unsupported source: the job may be scored and marked as good, but it will not auto-submit.
-- CAPTCHA / reCAPTCHA protection: some forms validate cleanly but still disable submit in automation; these are now reported as blocked rather than retried forever.

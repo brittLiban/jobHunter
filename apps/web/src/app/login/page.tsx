@@ -6,6 +6,7 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const params = await searchParams;
+  const demoSeedEnabled = process.env.JOBHUNTER_ENABLE_DEMO_SEED === "true";
 
   return (
     <div className="auth-page">
@@ -15,6 +16,13 @@ export default async function LoginPage({
         <p>
           Sign in with your email and password to access onboarding, resumes, the dashboard, and application review flows.
         </p>
+        {demoSeedEnabled ? (
+          <div className="auth-note">
+            <p className="eyebrow">Demo Account</p>
+            <p>Email: <code>demo@jobhunter.local</code></p>
+            <p>Password: <code>DemoPass123!</code></p>
+          </div>
+        ) : null}
         {params.error ? <p className="form-error">Login failed. Check your email and password.</p> : null}
         <form action="/api/auth/login" method="post" className="stack-form">
           <label className="form-field">
