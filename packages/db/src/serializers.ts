@@ -12,6 +12,7 @@ import type {
   Application,
   ApplicationEvent,
   ApplicationStatus as PrismaApplicationStatus,
+  Prisma,
   GeneratedAnswer as PrismaGeneratedAnswer,
   GeneratedAnswerKind,
   Job,
@@ -68,6 +69,7 @@ export function serializeDashboardSnapshot(input: {
       queued: applications.filter((application) => application.status === "QUEUED").length,
       prepared: applications.filter((application) => application.status === "PREPARED").length,
       autoSubmitted: applications.filter((application) => application.status === "AUTO_SUBMITTED").length,
+      submittedTotal: applications.filter((application) => ["AUTO_SUBMITTED", "SUBMITTED"].includes(application.status)).length,
       needsUserAction: applications.filter((application) => application.status === "NEEDS_USER_ACTION").length,
     },
     applications: applications.map((application) => serializeApplicationRecord(application)),
@@ -88,6 +90,14 @@ export function serializeApplicationRecord(
     source: application.job.source.name,
     fitScore: application.fitScoreSnapshot ?? 0,
     status: toCoreApplicationStatus(application.status),
+    blockingReason: application.blockingReason,
+    manualActionType: application.manualActionType?.toLowerCase() ?? null,
+    jobUrl: application.job.canonicalUrl,
+    applyUrl: application.job.applyUrl ?? undefined,
+    lastAutomationUrl: application.lastAutomationUrl,
+    preparedAt: application.preparedAt?.toISOString() ?? null,
+    submittedAt: application.submittedAt?.toISOString() ?? application.autoSubmittedAt?.toISOString() ?? null,
+    needsUserActionAt: application.needsUserActionAt?.toISOString() ?? null,
     updatedAt: application.updatedAt.toISOString(),
     generatedAnswersCount: application.generatedAnswers?.length ?? 0,
   };
@@ -111,6 +121,15 @@ export function serializeJobPosting(input: {
   fitScore: number | null;
   status: string;
   decision: "apply" | "skip" | null;
+  blockingReason: string | null;
+  lastAutomationUrl: string | null;
+  preparedPayload: Prisma.JsonValue | null;
+  applicationUpdatedAt: string | null;
+  preparedAt: string | null;
+  submittedAt: string | null;
+  needsUserActionAt: string | null;
+  simpleFlowConfirmed: boolean;
+  highConfidence: boolean;
 } {
   const { job, score, application } = input;
   return {
@@ -132,6 +151,15 @@ export function serializeJobPosting(input: {
     fitScore: score?.fitScore ?? null,
     status: application?.status.toLowerCase() ?? "discovered",
     decision: score ? (score.decision ? "apply" : "skip") : null,
+    blockingReason: application?.blockingReason ?? null,
+    lastAutomationUrl: application?.lastAutomationUrl ?? null,
+    preparedPayload: (application?.preparedPayload as Prisma.JsonValue | null | undefined) ?? null,
+    applicationUpdatedAt: application?.updatedAt.toISOString() ?? null,
+    preparedAt: application?.preparedAt?.toISOString() ?? null,
+    submittedAt: application?.submittedAt?.toISOString() ?? application?.autoSubmittedAt?.toISOString() ?? null,
+    needsUserActionAt: application?.needsUserActionAt?.toISOString() ?? null,
+    simpleFlowConfirmed: application?.simpleFlowConfirmed ?? false,
+    highConfidence: application?.highConfidence ?? false,
   };
 }
 
@@ -221,9 +249,18 @@ export function serializeApplicationDetail(
     fitScore: application.fitScoreSnapshot,
     status: toCoreApplicationStatus(application.status),
     blockingReason: application.blockingReason,
+    manualActionType: application.manualActionType?.toLowerCase() ?? null,
+    jobUrl: application.job.canonicalUrl,
+    applyUrl: application.job.applyUrl ?? application.job.canonicalUrl,
     lastAutomationUrl: application.lastAutomationUrl,
     preparedPayload: application.preparedPayload,
     automationSession: application.automationSession,
+    simpleFlowConfirmed: application.simpleFlowConfirmed,
+    highConfidence: application.highConfidence,
+    preparedAt: application.preparedAt?.toISOString() ?? null,
+    autoSubmittedAt: application.autoSubmittedAt?.toISOString() ?? null,
+    submittedAt: application.submittedAt?.toISOString() ?? null,
+    needsUserActionAt: application.needsUserActionAt?.toISOString() ?? null,
     updatedAt: application.updatedAt.toISOString(),
     generatedAnswers: serializeGeneratedAnswers(application.generatedAnswers),
     events: application.events.map((event) => ({

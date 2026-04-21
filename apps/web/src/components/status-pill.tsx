@@ -7,7 +7,7 @@ const labels: Record<ApplicationStatus, string> = {
   queued: "Queued",
   prepared: "Prepared",
   auto_submitted: "Auto Submitted",
-  needs_user_action: "Needs User Action",
+  needs_user_action: "Needs Attention",
   submitted: "Submitted",
   responded: "Responded",
   interview: "Interview",

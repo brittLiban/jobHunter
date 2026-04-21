@@ -151,6 +151,7 @@ When this happens, the system should preserve:
 - checkpoint artifacts when captured
 
 The user can then resume the live application or reopen it from the app dashboard.
+If the user completes the application manually, they should mark it submitted from the Applications page so the tracker and dashboard move it out of the attention queue.
 
 Checkpoint artifacts are written under:
 

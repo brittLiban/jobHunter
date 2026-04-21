@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { StatusPill } from "@/components/status-pill";
 import { requireOnboardedUser } from "@/lib/auth";
+import { describeTrackerState, formatTimestamp } from "@/lib/application-presentation";
 import { loadApplicationsPageData } from "@/lib/page-data";
 
 const guardrails = [
@@ -12,15 +13,18 @@ const guardrails = [
 
 const statusGuide = [
   "queued: job passed thresholding and is waiting for the next preparation or automation attempt",
-  "prepared: tailored resume content and answers were saved and the application packet is ready",
-  "needs_user_action: the system paused on friction and preserved state so you can finish quickly",
-  "auto_submitted: automation reached a clear confirmation state and completed the submission",
-  "submitted: the application is complete, whether manually or automatically",
+  "prepared: the packet is ready inside JobHunter, but the employer site is not necessarily filled yet",
+  "needs_user_action: the worker reached the site, saved its state, and paused because a human was needed",
+  "auto_submitted: automation detected a clear confirmation state and completed the submission itself",
+  "submitted: the application is complete because you marked a manual finish or another submit path confirmed it",
 ] as const;
 
 export default async function ApplicationsPage() {
   const user = await requireOnboardedUser();
   const applications = await loadApplicationsPageData(user.id);
+  const submittedCount = applications.filter((application) => application.status === "auto_submitted" || application.status === "submitted").length;
+  const needsAttentionCount = applications.filter((application) => application.status === "needs_user_action").length;
+  const preparedCount = applications.filter((application) => application.status === "prepared").length;
 
   return (
     <AppShell
@@ -28,6 +32,21 @@ export default async function ApplicationsPage() {
       description="Prepared packets, autonomous submissions, and manual checkpoints live in one queue with explicit status history."
       userName={user.fullName ?? user.email}
     >
+      <section className="app-grid app-metrics">
+        <article className="app-card">
+          <span>Actually Submitted</span>
+          <strong>{submittedCount}</strong>
+        </article>
+        <article className="app-card">
+          <span>Needs Attention</span>
+          <strong>{needsAttentionCount}</strong>
+        </article>
+        <article className="app-card">
+          <span>Prepared, Not Filled Yet</span>
+          <strong>{preparedCount}</strong>
+        </article>
+      </section>
+
       <section className="app-two-column">
         <article className="app-card">
           <div className="card-heading">
@@ -45,35 +64,65 @@ export default async function ApplicationsPage() {
                 </div>
               </div>
             ) : null}
-            {applications.map((application) => (
+            {applications.map((application) => {
+              const state = describeTrackerState(application);
+              const canMarkSubmitted = !["auto_submitted", "submitted", "skipped", "rejected", "offer"].includes(application.status);
+              return (
               <div key={application.id} className="list-row">
                 <div>
                   <p>{application.company}</p>
                   <span>{application.title}</span>
+                  <div className="row-links">
+                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
+                      Job post
+                    </a>
+                    {application.applyUrl ? (
+                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
+                        Apply page
+                      </a>
+                    ) : null}
+                    {application.lastAutomationUrl ? (
+                      <a href={application.lastAutomationUrl} className="inline-link" target="_blank" rel="noreferrer">
+                        Saved resume point
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+                <div>
+                  <p>{state.label}</p>
+                  <span>{state.detail}</span>
                 </div>
                 <div>
                   <p>{application.generatedAnswers.length} answers</p>
-                  <span>{application.fitScore !== null ? `${application.fitScore}/100 fit` : "Unscored"}</span>
+                  <span>{application.fitScore !== null ? `${application.fitScore}/100 fit · ${formatTimestamp(application.updatedAt)}` : `Unscored · ${formatTimestamp(application.updatedAt)}`}</span>
                 </div>
                 <div className="row-status">
                   <StatusPill status={application.status as Parameters<typeof StatusPill>[0]["status"]} />
                 </div>
-                {application.status === "needs_user_action" ? (
-                  <div className="list-actions">
-                    {application.lastAutomationUrl ? (
-                      <a href={application.lastAutomationUrl} className="button button-secondary">
-                        Resume
-                      </a>
-                    ) : null}
+                <div className="list-actions">
+                  {application.status === "needs_user_action" && application.lastAutomationUrl ? (
+                    <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                      Resume
+                    </a>
+                  ) : null}
+                  {canMarkSubmitted ? (
+                    <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
+                      <button type="submit" className="button button-secondary">
+                        Mark submitted
+                      </button>
+                    </form>
+                  ) : null}
+                  {application.status === "needs_user_action" ? (
                     <form action={`/api/applications/${application.id}/reopen`} method="post">
                       <button type="submit" className="button button-secondary">
                         Reopen
                       </button>
                     </form>
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </article>
 
@@ -103,8 +152,8 @@ export default async function ApplicationsPage() {
           {applications.flatMap((application) =>
             application.events.slice(0, 1).map((event) => (
               <div key={event.id} className="stack-item">
-                <p>{application.company} - {event.title}</p>
-                <span>{event.detail ?? event.type}</span>
+                <p>{application.company} · {event.title}</p>
+                <span>{event.detail ?? event.type} · {formatTimestamp(event.createdAt)}</span>
               </div>
             )),
           )}

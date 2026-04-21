@@ -367,6 +367,49 @@ export async function reopenApplicationForUser(userId: string, applicationId: st
   return true;
 }
 
+export async function markApplicationSubmittedForUser(userId: string, applicationId: string) {
+  const application = await prisma.application.findFirst({
+    where: { id: applicationId, userId },
+  });
+  if (!application) {
+    return null;
+  }
+
+  await prisma.application.update({
+    where: { id: applicationId },
+    data: {
+      status: "SUBMITTED",
+      submittedAt: new Date(),
+      manualActionType: null,
+      blockingReason: null,
+    },
+  });
+
+  await prisma.applicationEvent.create({
+    data: {
+      applicationId,
+      type: "SUBMITTED",
+      actor: "user",
+      title: "Application marked submitted",
+      detail: "The user confirmed the application was submitted.",
+    },
+  });
+
+  await prisma.notification.updateMany({
+    where: {
+      userId,
+      applicationId,
+      status: "UNREAD",
+    },
+    data: {
+      status: "READ",
+      readAt: new Date(),
+    },
+  });
+
+  return true;
+}
+
 export async function markNotificationRead(userId: string, notificationId: string) {
   const notification = await prisma.notification.findFirst({
     where: { id: notificationId, userId },

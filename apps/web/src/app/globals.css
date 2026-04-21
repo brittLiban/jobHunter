@@ -455,7 +455,7 @@ h3 {
 }
 
 .app-metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 18px;
 }
 
@@ -469,13 +469,36 @@ h3 {
   justify-self: end;
 }
 
+.list-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.list-row > div {
+  min-width: 0;
+}
+
 .list-actions {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.status-auto_submitted {
+.row-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.inline-link {
+  color: var(--teal);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.status-auto_submitted,
+.status-submitted {
   color: var(--success);
 }
 

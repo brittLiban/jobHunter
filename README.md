@@ -226,10 +226,10 @@ If you want a narrower or different set of job sources, set the corresponding `J
 The main application states a user will see are:
 
 - `queued`: the job is eligible and waiting for worker processing
-- `prepared`: tailored materials and prepared payloads are saved
-- `needs_user_action`: automation paused because the flow was uncertain or blocked
-- `auto_submitted`: automation detected a clear successful submission state
-- `submitted`: the application is complete, whether automatically or manually
+- `prepared`: tailored materials and prepared payloads are saved in JobHunter, but the employer site is not necessarily filled yet
+- `needs_user_action`: the worker reached the live application flow, preserved state, and paused because a human was required
+- `auto_submitted`: automation detected a clear successful submission state on the employer site
+- `submitted`: the application is complete because it was confirmed automatically or manually marked submitted after user completion
 
 When an application enters `needs_user_action`, the system is expected to preserve:
 
@@ -239,6 +239,7 @@ When an application enters `needs_user_action`, the system is expected to preser
 - checkpoint screenshots or page captures when available
 
 Use the Applications page to either resume the interrupted flow or reopen the application for another worker attempt.
+If you finish an application yourself from a prepared packet or paused flow, use the `Mark submitted` action so the dashboard reflects that it is actually complete.
 
 ## File Locations
 
