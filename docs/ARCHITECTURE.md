@@ -51,6 +51,7 @@ Current responsibilities:
 - tailor resume content and generate short answers
 - prepare applications and tracker records
 - attempt Greenhouse automation only when explicitly enabled
+- skip users who are not onboarded or do not yet have a default resume
 
 ### `packages/core`
 
@@ -195,6 +196,18 @@ The model can generate:
 - short application answers
 
 The model must not invent experience or replace structured profile facts.
+
+## Runtime Storage
+
+The current v1 runtime uses the database for structured state and the local filesystem for file artifacts.
+
+Primary filesystem paths:
+
+- uploaded resumes: `data/uploads/resumes/`
+- seeded demo resume: `data/resumes/demo/`
+- automation checkpoints: `data/manual_checkpoints/<applicationId>/`
+
+This keeps v1 simple while still preserving enough information for human-in-the-loop resume flows.
 
 ## Legacy Python Layer
 

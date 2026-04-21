@@ -12,7 +12,7 @@ Supporting docs:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Implementation TODOs](docs/TODO.md)
-- [Legacy Python operations](docs/OPERATIONS.md)
+- [Operations](docs/OPERATIONS.md)
 
 ## Current Status
 
@@ -108,6 +108,25 @@ Important variables:
 
 When no LLM provider is configured, the services fall back to deterministic mock output so the pipeline still runs.
 
+## First Run Flow
+
+For a clean local test of the current product surface:
+
+1. Start Postgres and apply migrations.
+2. Create an account or seed the demo account.
+3. Complete onboarding so the structured profile and preferences exist.
+4. Upload at least one base resume from the Resumes page.
+5. Trigger a pipeline cycle from the dashboard or run the worker from the CLI.
+6. Review prepared applications, notifications, and any `needs_user_action` items in the app.
+
+Important behavior:
+
+- the worker only processes users who have completed onboarding
+- the worker also requires a default resume before it can score and prepare applications
+- the uploaded file and the pasted base resume text are both important
+- the file is used for resume upload during automation
+- the pasted base text is what scoring, tailoring, and answer generation use
+
 ## Local Development
 
 ### Option 1: Docker Compose
@@ -168,6 +187,8 @@ npm run start --workspace @jobhunter/worker
 npm run dev --workspace @jobhunter/web
 ```
 
+You can also trigger a single authenticated worker cycle from the dashboard with the `Run worker now` action.
+
 ## Demo Workflow
 
 With demo seed enabled, the repository creates:
@@ -184,6 +205,18 @@ Demo credentials:
 - password: `DemoPass123!`
 
 The worker has also been validated locally against Docker Postgres with a seeded onboarded user. In the current configuration it discovers jobs, scores fit, prepares applications, and records tracker state without performing live submission by default.
+
+## Default Discovery Targets
+
+If you do not override the source environment variables, the worker uses these built-in defaults:
+
+- Greenhouse: `stripe`, `figma`
+- Ashby: `vercel`, `retool`
+- Lever: `box`
+- Workable: disabled unless `JOBHUNTER_WORKABLE_COMPANIES` is set
+- Mock feed: always enabled
+
+If you want a narrower or different set of job sources, set the corresponding `JOBHUNTER_*` environment variables explicitly before running the worker.
 
 ## Status Meanings
 
@@ -203,6 +236,16 @@ When an application enters `needs_user_action`, the system is expected to preser
 - checkpoint screenshots or page captures when available
 
 Use the Applications page to either resume the interrupted flow or reopen the application for another worker attempt.
+
+## File Locations
+
+Important runtime files are stored under `data/`:
+
+- uploaded resumes: `data/uploads/resumes/`
+- seeded demo resume: `data/resumes/demo/`
+- manual checkpoint captures: `data/manual_checkpoints/<applicationId>/`
+
+Checkpoint directories can contain screenshots, HTML captures, and extracted text for paused automation flows.
 
 ## Important Limitations
 
