@@ -47,6 +47,8 @@
    - Discovery controls now gate persistence by source, seniority, location, and include/exclude keyword rules so off-target jobs do not enter the queue
    - Needs-attention rows now show how many fields were autofilled and which required questions still need the user
    - Queue users can now save unresolved required answers per application and reuse them on the next live autofill retry
+   - Needs-attention rows now preload conservative LLM suggestions for unresolved required answers when confidence is high
+   - Greenhouse submit detection now covers broader submit/apply control patterns to reduce false ambiguous pauses
 
 ## Remaining Work
 
@@ -63,7 +65,7 @@
 3. Automation coverage
    - Expand Playwright automation beyond Greenhouse
    - Deepen radio/select/file mapping coverage for non-standard forms
-   - Improve ambiguous-submit detection and application confirmation persistence
+   - Expand submit/confirmation detection coverage for additional ATS systems beyond current Greenhouse heuristics
 
 4. Product polish
    - Add richer dashboard analytics and outcome tracking

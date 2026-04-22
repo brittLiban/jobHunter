@@ -1163,6 +1163,10 @@ body {
   flex-wrap: wrap;
 }
 
+.review-action-row {
+  margin: 6px 0 2px;
+}
+
 .review-nav-row {
   justify-content: space-between;
   margin: 18px 0;
@@ -1180,6 +1184,34 @@ body {
   border-radius: 16px;
   border: 1px solid var(--border);
   background: #fbfcfe;
+}
+
+.unresolved-list {
+  margin-top: 12px;
+  gap: 14px;
+}
+
+.unresolved-form {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.unresolved-form .form-field {
+  margin: 0;
+}
+
+.unresolved-form .form-field input {
+  background: white;
+}
+
+.unresolved-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.row-help-tight {
+  margin-top: 0;
 }
 
 .review-empty-state {

@@ -363,6 +363,7 @@ function extractAutomationSummary(value: Prisma.JsonValue | null | undefined): A
       filledFieldCount: 0,
       unknownRequiredFields: [],
       missingProfileFields: [],
+      suggestedFieldAnswers: {},
     };
   }
 
@@ -375,11 +376,25 @@ function extractAutomationSummary(value: Prisma.JsonValue | null | undefined): A
   const missingProfileFields = Array.isArray(value.missingProfileFields)
     ? value.missingProfileFields.filter((item): item is string => typeof item === "string")
     : [];
+  const suggestedFieldAnswers = isRecord(value.suggestedFieldAnswers)
+    ? Object.entries(value.suggestedFieldAnswers).reduce<Record<string, string>>((acc, [label, answer]) => {
+      if (typeof answer !== "string") {
+        return acc;
+      }
+      const trimmed = answer.trim();
+      if (!trimmed) {
+        return acc;
+      }
+      acc[label] = trimmed;
+      return acc;
+    }, {})
+    : {};
 
   return {
     filledFieldCount: filledFields.length,
     unknownRequiredFields,
     missingProfileFields,
+    suggestedFieldAnswers,
   };
 }
 

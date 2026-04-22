@@ -864,17 +864,38 @@ async function waitForSubmissionConfirmation(page: Page, originalRoot: FormRoot)
 }
 
 async function findSubmitButton(root: FormRoot) {
-  const roleButton = root.getByRole("button", { name: /submit( application)?/i }).first();
-  if (await roleButton.count()) {
-    return roleButton;
+  const candidates = [
+    root.getByRole("button", { name: /submit( application)?/i }).first(),
+    root.getByRole("button", {
+      name: /(submit|apply( now)?|apply for this job|send application|complete application|finish application)/i,
+    }).first(),
+    root.locator("button[type='submit']:not([disabled])").first(),
+    root.locator("input[type='submit']:not([disabled])").first(),
+    root.locator("button[data-testid*='submit' i]:not([disabled])").first(),
+    root.locator("button[id*='submit' i]:not([disabled])").first(),
+  ];
+
+  for (const candidate of candidates) {
+    if (await isUsableButton(candidate)) {
+      return candidate;
+    }
   }
 
-  const selectorButton = root.locator("button[type='submit'], input[type='submit']").first();
-  if (await selectorButton.count()) {
-    return selectorButton;
+  const formScopedFallback = root
+    .locator("form button:not([disabled]), form input[type='submit']:not([disabled])")
+    .last();
+  if (await isUsableButton(formScopedFallback)) {
+    return formScopedFallback;
   }
 
   return null;
+}
+
+async function isUsableButton(locator: Locator) {
+  if (!await locator.count().catch(() => 0)) {
+    return false;
+  }
+  return locator.isVisible().catch(() => true);
 }
 
 async function detectManualActionSignal(page: Page, root: FormRoot, combinedText: string) {

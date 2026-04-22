@@ -10,6 +10,7 @@ import {
   type GeneratedAnswer,
   type JobPosting,
   type JobPreferences,
+  type StructuredApplicationDefaults,
   type StructuredProfile,
 } from "@jobhunter/core";
 import {
@@ -29,6 +30,7 @@ import {
 } from "@jobhunter/db";
 import { buildDefaultSourceTargetsFromEnv, discoverJobsForTargets } from "@jobhunter/job-sources";
 import {
+  ApplicationFieldAnswerSuggesterService,
   JobScorerService,
   JobSeniorityClassifierService,
   ResumeTailorService,
@@ -699,6 +701,7 @@ async function persistAutomationOutcome(input: {
   }
 
   if (!result.success && result.manualActionType) {
+    const suggestedFieldAnswers = await buildUnknownFieldSuggestions(result);
     await updateApplicationAfterAutomation({
       applicationId: input.applicationId,
       status: "NEEDS_USER_ACTION",
@@ -715,6 +718,7 @@ async function persistAutomationOutcome(input: {
         unknownRequiredFields: result.unknownRequiredFields,
         missingProfileFields: result.missingProfileFields,
         filledFields: result.filledFields,
+        suggestedFieldAnswers,
       },
     });
     await recordApplicationEvent({
@@ -769,6 +773,43 @@ async function persistAutomationOutcome(input: {
   return "prepared" as const;
 }
 
+async function buildUnknownFieldSuggestions(
+  result: Awaited<ReturnType<typeof applyToGreenhouseJob>>,
+) {
+  const unknownRequiredFields = result.unknownRequiredFields ?? [];
+  if (unknownRequiredFields.length === 0) {
+    return {} as Record<string, string>;
+  }
+
+  const preparedPayload = isRecord(result.preparedPayload) ? result.preparedPayload : null;
+  const defaults = coerceStructuredDefaults(preparedPayload?.defaults);
+  const generatedAnswers = coerceGeneratedAnswers(preparedPayload?.generatedAnswers);
+  const sourceHost = safeHostFromUrl(result.currentUrl ?? result.applyUrl ?? "");
+  const existingOverrides = coerceFieldOverrides(preparedPayload?.fieldOverrides);
+  const service = new ApplicationFieldAnswerSuggesterService();
+  const suggestions: Record<string, string> = {};
+
+  for (const label of unknownRequiredFields) {
+    const normalizedLabel = normalizeFieldOverrideKey(label);
+    if (existingOverrides[normalizedLabel]) {
+      continue;
+    }
+
+    const suggested = await service.suggest({
+      sourceHost,
+      fieldLabel: label,
+      defaults,
+      generatedAnswers,
+    });
+
+    if (suggested.shouldSuggest && suggested.answer.trim()) {
+      suggestions[normalizedLabel] = suggested.answer.trim();
+    }
+  }
+
+  return suggestions;
+}
+
 function extractStructuredDefaults(
   context: NonNullable<Awaited<ReturnType<typeof getApplicationAutomationContext>>>,
 ) {
@@ -818,6 +859,122 @@ function extractFieldOverrides(
 
 function normalizeFieldOverrideKey(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function coerceFieldOverrides(value: unknown) {
+  if (!isRecord(value)) {
+    return {} as Record<string, string>;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => typeof item === "string")
+      .map(([key, item]) => [normalizeFieldOverrideKey(key), String(item).trim()])
+      .filter(([, item]) => item.length > 0),
+  );
+}
+
+function coerceGeneratedAnswers(value: unknown): GeneratedAnswer[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+      const kind = typeof item.kind === "string" ? item.kind : "";
+      const question = typeof item.question === "string" ? item.question : "";
+      const answer = typeof item.answer === "string" ? item.answer : "";
+      if (!question.trim() || !answer.trim()) {
+        return null;
+      }
+      if (!["why_role", "why_fit", "anything_else", "custom"].includes(kind)) {
+        return null;
+      }
+      return {
+        kind: kind as GeneratedAnswer["kind"],
+        question,
+        answer,
+      };
+    })
+    .filter((item): item is GeneratedAnswer => item !== null);
+}
+
+function coerceStructuredDefaults(value: unknown): StructuredApplicationDefaults {
+  const record = isRecord(value) ? value : {};
+  return {
+    fullLegalName: readString(record.fullLegalName),
+    firstName: readString(record.firstName),
+    lastName: readString(record.lastName),
+    email: readString(record.email),
+    phone: readString(record.phone),
+    city: readString(record.city),
+    state: readString(record.state),
+    country: readString(record.country),
+    linkedinUrl: readOptionalString(record.linkedinUrl),
+    githubUrl: readOptionalString(record.githubUrl),
+    portfolioUrl: readOptionalString(record.portfolioUrl),
+    workAuthorization: readString(record.workAuthorization),
+    usCitizenStatus: readString(record.usCitizenStatus),
+    requiresVisaSponsorship: readYesNo(record.requiresVisaSponsorship),
+    veteranStatus: readString(record.veteranStatus),
+    disabilityStatus: readOptionalString(record.disabilityStatus),
+    school: readString(record.school),
+    degree: readString(record.degree),
+    graduationDate: readString(record.graduationDate),
+    yearsOfExperience: readString(record.yearsOfExperience),
+    currentCompany: readString(record.currentCompany),
+    currentTitle: readString(record.currentTitle),
+    targetLocations: readStringArray(record.targetLocations),
+    workModes: readStringArray(record.workModes),
+    messagingOptIn: readOptionalYesNo(record.messagingOptIn),
+    whyRole: readOptionalString(record.whyRole),
+    whyFit: readOptionalString(record.whyFit),
+    anythingElse: readOptionalString(record.anythingElse),
+    tailoredSummary: readOptionalString(record.tailoredSummary),
+  };
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function readOptionalString(value: unknown) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function readYesNo(value: unknown): "Yes" | "No" {
+  return String(value).trim().toLowerCase() === "yes" ? "Yes" : "No";
+}
+
+function readOptionalYesNo(value: unknown): "Yes" | "No" | undefined {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "yes") {
+    return "Yes";
+  }
+  if (normalized === "no") {
+    return "No";
+  }
+  return undefined;
+}
+
+function safeHostFromUrl(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown-host";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

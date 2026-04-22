@@ -108,6 +108,7 @@ Live supported ATS behavior is different:
 - then the app opens the current step that the worker reached
 - the queue records how many fields were autofilled and which required questions still need the user
 - unresolved required questions can be saved in the queue so the next retry reuses those answers
+- unresolved required questions can preload a conservative AI suggestion in the queue when confidence is high and no guessing is required
 - if the flow pauses on friction, the application moves into `Needs attention`
 
 ### Run the worker once
@@ -210,6 +211,7 @@ Supported autofill behavior today:
 - common profile fields come from structured profile data, not the LLM
 - role seniority is classified during ingestion and stored on the job record
 - unfamiliar field labels can be resolved through the field resolver LLM
+- unresolved required fields can receive conservative answer suggestions through an LLM suggester, cached in `data/cache/llm-semantic-cache.json`
 - successful label mappings are cached in `data/cache/field-resolution-cache.json`
 - seniority classification is cached in `data/cache/job-seniority-cache.json`
 - scoring, resume tailoring, and short-answer generation use normalized request caching in `data/cache/llm-semantic-cache.json`

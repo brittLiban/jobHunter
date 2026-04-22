@@ -145,6 +145,38 @@ export function buildApplicationFieldResolverPrompt(input: {
   };
 }
 
+export function buildApplicationFieldAnswerSuggestionPrompt(input: {
+  sourceHost: string;
+  fieldLabel: string;
+  defaults: StructuredApplicationDefaults;
+  generatedAnswers: GeneratedAnswer[];
+}): { systemPrompt: string; userPrompt: string } {
+  return {
+    systemPrompt: [
+      "You suggest an application answer for one specific field label.",
+      "Return JSON only.",
+      "Never invent facts.",
+      "If the label is sensitive or uncertain (for example prior employer history), return shouldSuggest=false.",
+      "Prefer direct concise answers that can be pasted into a form input.",
+    ].join(" "),
+    userPrompt: [
+      `Application host: ${input.sourceHost}`,
+      `Field label: ${input.fieldLabel}`,
+      "Prepared structured defaults:",
+      JSON.stringify(input.defaults),
+      "Prepared generated answers:",
+      JSON.stringify(input.generatedAnswers),
+      "Response schema:",
+      JSON.stringify({
+        shouldSuggest: true,
+        answer: "short answer or empty string",
+        confidence: 0.0,
+        reasoning: "short explanation",
+      }, null, 2),
+    ].join("\n\n"),
+  };
+}
+
 export function fallbackExplanation(fitAssessment: FitAssessment): string {
   return [
     `Score: ${fitAssessment.fitScore}`,

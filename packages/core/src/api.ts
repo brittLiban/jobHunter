@@ -79,6 +79,7 @@ export const applicationsResponseSchema = z.object({
         filledFieldCount: z.number().int().nonnegative(),
         unknownRequiredFields: z.array(z.string()),
         missingProfileFields: z.array(z.string()),
+        suggestedFieldAnswers: z.record(z.string(), z.string()).default({}),
       }).optional(),
       simpleFlowConfirmed: z.boolean(),
       highConfidence: z.boolean(),

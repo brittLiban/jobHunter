@@ -345,6 +345,7 @@ export default async function ApplicationsPage({
                   focusedApplication.automationSummary.filledFieldCount > 0
                   || focusedApplication.automationSummary.unknownRequiredFields.length > 0
                   || focusedApplication.automationSummary.missingProfileFields.length > 0
+                  || Object.keys(focusedApplication.automationSummary.suggestedFieldAnswers ?? {}).length > 0
                 ) ? (
                   <div className="review-detail-grid">
                     <div className="review-detail-panel">
@@ -353,26 +354,44 @@ export default async function ApplicationsPage({
                         Last live run autofilled {focusedApplication.automationSummary.filledFieldCount} field{focusedApplication.automationSummary.filledFieldCount === 1 ? "" : "s"} before pausing.
                       </p>
                       {focusedApplication.automationSummary.unknownRequiredFields.length > 0 ? (
-                        <div className="stack-list">
-                          {focusedApplication.automationSummary.unknownRequiredFields.map((item: string) => (
-                            <form
-                              key={item}
-                              action={`/api/applications/${focusedApplication.id}/field-overrides`}
-                              method="post"
-                              className="stack-item"
-                            >
-                              <input type="hidden" name="label" value={item} />
-                              <label className="form-field">
-                                <span>Needs your answer: {item}</span>
-                                <input
-                                  name="value"
-                                  placeholder="Type the answer to reuse on retry"
-                                  defaultValue={getSavedFieldOverride(focusedApplication.preparedPayload, item)}
-                                />
-                              </label>
-                              <button type="submit" className="button button-secondary">Save answer</button>
-                            </form>
-                          ))}
+                        <p className="row-help">
+                          Unresolved required questions: {focusedApplication.automationSummary.unknownRequiredFields.length}. AI suggestions ready: {Object.keys(focusedApplication.automationSummary.suggestedFieldAnswers ?? {}).length}.
+                        </p>
+                      ) : null}
+                      {focusedApplication.automationSummary.unknownRequiredFields.length > 0 ? (
+                        <div className="stack-list unresolved-list">
+                          {focusedApplication.automationSummary.unknownRequiredFields.map((item: string) => {
+                            const savedValue = getSavedFieldOverride(focusedApplication.preparedPayload, item);
+                            const suggestedValue = getSuggestedFieldAnswer(focusedApplication.automationSummary, item);
+                            const defaultValue = savedValue || suggestedValue;
+                            return (
+                              <form
+                                key={item}
+                                action={`/api/applications/${focusedApplication.id}/field-overrides`}
+                                method="post"
+                                className="stack-item unresolved-form"
+                              >
+                                <input type="hidden" name="label" value={item} />
+                                <label className="form-field">
+                                  <span>Needs your answer: {item}</span>
+                                  <input
+                                    name="value"
+                                    placeholder="Type the answer to reuse on retry"
+                                    defaultValue={defaultValue}
+                                  />
+                                </label>
+                                {!savedValue && suggestedValue ? (
+                                  <p className="row-help row-help-tight">AI suggestion prefilled. Edit if needed, then save.</p>
+                                ) : null}
+                                {savedValue ? (
+                                  <p className="row-help row-help-tight">Saved answer already set for this question.</p>
+                                ) : null}
+                                <div className="unresolved-actions">
+                                  <button type="submit" className="button button-secondary">Save answer</button>
+                                </div>
+                              </form>
+                            );
+                          })}
                         </div>
                       ) : (
                         <p className="row-help">No unresolved required field mappings were left behind.</p>
@@ -596,6 +615,16 @@ function getSavedFieldOverride(payload: unknown, label: string) {
 
   const key = normalizeFieldOverrideKey(label);
   const value = payload.fieldOverrides[key];
+  return typeof value === "string" ? value : "";
+}
+
+function getSuggestedFieldAnswer(automationSummary: unknown, label: string) {
+  if (!isRecord(automationSummary) || !isRecord(automationSummary.suggestedFieldAnswers)) {
+    return "";
+  }
+
+  const key = normalizeFieldOverrideKey(label);
+  const value = automationSummary.suggestedFieldAnswers[key];
   return typeof value === "string" ? value : "";
 }
 

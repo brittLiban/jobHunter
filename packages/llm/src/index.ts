@@ -1,3 +1,4 @@
+export * from "./application-field-answer-suggester";
 export * from "./application-field-resolver";
 export * from "./job-scorer";
 export * from "./job-seniority";

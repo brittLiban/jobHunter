@@ -140,6 +140,7 @@ export const applicationAutomationSummarySchema = z.object({
   filledFieldCount: z.number().int().nonnegative().default(0),
   unknownRequiredFields: z.array(z.string().min(1)).default([]),
   missingProfileFields: z.array(z.string().min(1)).default([]),
+  suggestedFieldAnswers: z.record(z.string(), z.string()).default({}),
 });
 
 export const applicationRecordSchema = z.object({

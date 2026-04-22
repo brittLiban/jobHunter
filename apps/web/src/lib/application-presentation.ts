@@ -7,6 +7,7 @@ type TrackerStateInput = {
     filledFieldCount?: number;
     unknownRequiredFields?: string[];
     missingProfileFields?: string[];
+    suggestedFieldAnswers?: Record<string, string>;
   } | null;
   submittedAt?: string | null;
   needsUserActionAt?: string | null;
@@ -86,7 +87,11 @@ function buildPauseSummary(input: TrackerStateInput) {
   const seenAt = input.needsUserActionAt ? ` on ${formatTimestamp(input.needsUserActionAt)}` : "";
   const unresolved = input.automationSummary?.unknownRequiredFields ?? [];
   const missingProfileFields = input.automationSummary?.missingProfileFields ?? [];
-  const unresolvedHint = buildUnresolvedHint({ unresolved, missingProfileFields });
+  const unresolvedHint = buildUnresolvedHint({
+    unresolved,
+    missingProfileFields,
+    suggestedFieldAnswers: input.automationSummary?.suggestedFieldAnswers,
+  });
 
   if (blockerLabel && input.blockingReason) {
     return `Paused${seenAt} on ${blockerLabel}: ${input.blockingReason}${unresolvedHint}`.trim();
@@ -138,17 +143,23 @@ function buildAutomationProgressSummary(summary: TrackerStateInput["automationSu
 function buildUnresolvedHint(input: {
   unresolved: string[];
   missingProfileFields: string[];
+  suggestedFieldAnswers?: Record<string, string>;
 }) {
+  const suggestedCount = Object.keys(input.suggestedFieldAnswers ?? {}).length;
+  const suggestedHint = suggestedCount > 0
+    ? ` AI drafted ${suggestedCount} reusable answer${suggestedCount === 1 ? "" : "s"} for quick save.`
+    : "";
+
   if (input.unresolved.length > 0) {
     const first = input.unresolved[0];
     const extra = input.unresolved.length > 1 ? ` and ${input.unresolved.length - 1} more` : "";
-    return ` Remaining required confirmation: ${first}${extra}.`;
+    return ` Remaining required confirmation: ${first}${extra}.${suggestedHint}`;
   }
 
   if (input.missingProfileFields.length > 0) {
     const first = input.missingProfileFields[0];
     const extra = input.missingProfileFields.length > 1 ? ` and ${input.missingProfileFields.length - 1} more` : "";
-    return ` Missing saved profile data: ${first}${extra}.`;
+    return ` Missing saved profile data: ${first}${extra}.${suggestedHint}`;
   }
 
   return "";
