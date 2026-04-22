@@ -1,9 +1,10 @@
 import type {
   GeneratedAnswerSet,
   JobPosting,
+  JobSeniorityAssessment,
   TailoredResumeDraft,
 } from "@jobhunter/core";
-import { Prisma, type ApplicationStatus, type JobSourceKind, type ManualActionType, WorkMode } from "@prisma/client";
+import { Prisma, type ApplicationStatus, type JobSourceKind, type ManualActionType, JobSeniorityLevel, WorkMode } from "@prisma/client";
 
 import { prisma } from "./index";
 
@@ -38,6 +39,7 @@ export async function upsertDiscoveredJob(input: {
   sourceId: string;
   job: JobPosting;
   rawPayload?: unknown;
+  seniorityAssessment?: JobSeniorityAssessment;
 }) {
   const { sourceId, job, rawPayload } = input;
   const sharedUpdate = {
@@ -48,6 +50,9 @@ export async function upsertDiscoveredJob(input: {
     company: job.company,
     title: job.title,
     locationText: job.location,
+    seniorityLevel: toPrismaJobSeniority(input.seniorityAssessment?.level ?? job.seniority),
+    seniorityConfidence: input.seniorityAssessment?.confidence ?? job.seniorityConfidence ?? null,
+    seniorityReason: input.seniorityAssessment?.reasoning ?? null,
     workMode: toPrismaWorkMode(job.workMode),
     salaryMin: job.salaryMin ?? null,
     salaryMax: job.salaryMax ?? null,
@@ -592,6 +597,19 @@ function toPrismaWorkMode(mode: JobPosting["workMode"] | undefined): WorkMode | 
       return WorkMode.ON_SITE;
     case "flexible":
       return WorkMode.FLEXIBLE;
+    default:
+      return null;
+  }
+}
+
+function toPrismaJobSeniority(level: JobPosting["seniority"] | undefined): JobSeniorityLevel | null {
+  switch (level) {
+    case "entry":
+      return JobSeniorityLevel.ENTRY;
+    case "mid":
+      return JobSeniorityLevel.MID;
+    case "senior":
+      return JobSeniorityLevel.SENIOR;
     default:
       return null;
   }

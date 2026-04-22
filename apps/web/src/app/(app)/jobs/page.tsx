@@ -25,6 +25,7 @@ type JobsPageParams = {
   locationPreset?: string;
   locationText?: string;
   source?: string;
+  seniority?: string;
 };
 
 export default async function JobsPage({
@@ -40,6 +41,7 @@ export default async function JobsPage({
   const locationPreset = readSearchParam(params.locationPreset) || "all";
   const locationText = readSearchParam(params.locationText);
   const sourceFilter = readSearchParam(params.source) || "all";
+  const seniorityFilter = readSearchParam(params.seniority) || "all";
 
   const filteredJobs = jobs.filter((job) =>
     matchesSearch(
@@ -48,6 +50,7 @@ export default async function JobsPage({
     )
     && matchesStatus(job.status, statusFilter)
     && matchesSource(job.sourceKind, sourceFilter)
+    && (seniorityFilter === "all" || (job.seniority ?? "unknown") === seniorityFilter)
     && matchesLocation({
       location: job.location,
       preset: locationPreset,
@@ -64,29 +67,30 @@ export default async function JobsPage({
     || statusFilter !== "all"
     || locationPreset !== "all"
     || locationText
-    || sourceFilter !== "all",
+    || sourceFilter !== "all"
+    || seniorityFilter !== "all",
   );
 
   return (
     <AppShell
-      title="Jobs"
-      description="Search the full job feed by company, role, status, and location, then launch the right application action directly from the results."
+      title="Discovery"
+      description="This page shows the jobs that survived your discovery controls. Use it to sanity-check what the worker kept, not to sift through everything it ever saw."
       userName={user.fullName ?? user.email}
       currentPath="/jobs"
     >
       <section className="app-card app-toolbar">
         <div>
           <p className="eyebrow">Filters</p>
-          <h2>Find the exact slice of jobs you want</h2>
+          <h2>Inspect the kept feed</h2>
           <p className="section-copy">
-            Use the Greater Seattle preset for Seattle, Bellevue, Redmond, Kirkland, Renton, Tacoma, and nearby metro matches. Add a custom location term when you want something more specific.
+            Use the Greater Seattle preset for Seattle, Bellevue, Redmond, Kirkland, Renton, Tacoma, and nearby metro matches. Change discovery controls in Settings when you want to change what gets persisted at all.
           </p>
           <div className="quick-filters">
             <a
               href="/jobs"
               className={`filter-chip ${locationPreset === "all" && !locationText ? "filter-chip-active" : ""}`}
             >
-              All jobs
+              All kept jobs
             </a>
             <a
               href="/jobs?locationPreset=greater_seattle"
@@ -95,16 +99,13 @@ export default async function JobsPage({
               Greater Seattle Area
             </a>
             <a
-              href="/jobs?locationPreset=remote"
-              className={`filter-chip ${locationPreset === "remote" ? "filter-chip-active" : ""}`}
-            >
-              Remote
-            </a>
-            <a
               href="/jobs?status=prepared"
               className={`filter-chip ${statusFilter === "prepared" ? "filter-chip-active" : ""}`}
             >
               Ready to run
+            </a>
+            <a href="/profile" className="filter-chip">
+              Discovery settings
             </a>
           </div>
         </div>
@@ -124,7 +125,7 @@ export default async function JobsPage({
           </label>
           <label className="form-field form-field-inline">
             <span>Custom location</span>
-            <input name="locationText" defaultValue={locationText} placeholder="Bellevue, San Francisco, etc." />
+            <input name="locationText" defaultValue={locationText} placeholder="Bellevue, Seattle, remote" />
           </label>
           <label className="form-field form-field-inline">
             <span>Status</span>
@@ -149,6 +150,15 @@ export default async function JobsPage({
               <option value="workable">Workable</option>
             </select>
           </label>
+          <label className="form-field form-field-inline">
+            <span>Seniority</span>
+            <select name="seniority" defaultValue={seniorityFilter}>
+              <option value="all">All levels</option>
+              <option value="entry">Entry</option>
+              <option value="mid">Mid</option>
+              <option value="senior">Senior</option>
+            </select>
+          </label>
           <div className="filter-actions">
             <button type="submit" className="button button-primary">
               Apply filters
@@ -164,7 +174,7 @@ export default async function JobsPage({
         <article className="app-card">
           <span>Results</span>
           <strong>{filteredJobs.length}</strong>
-          <p className="metric-note">{showingFiltered ? `of ${jobs.length} tracked jobs` : "current full feed"}</p>
+          <p className="metric-note">{showingFiltered ? `of ${jobs.length} kept jobs` : "current kept feed"}</p>
         </article>
         <article className="app-card">
           <span>Ready to run</span>
@@ -179,7 +189,7 @@ export default async function JobsPage({
           <strong>{submittedCount}</strong>
         </article>
         <article className="app-card">
-          <span>Seattle area in results</span>
+          <span>Seattle area in view</span>
           <strong>{seattleAreaCount}</strong>
         </article>
       </section>
@@ -187,7 +197,7 @@ export default async function JobsPage({
       <section className="app-card">
         <div className="card-heading">
           <div>
-            <p className="eyebrow">Results</p>
+            <p className="eyebrow">Discovery Feed</p>
             <h2>{buildResultsHeading(filteredJobs.length, jobs.length, showingFiltered)}</h2>
           </div>
           <p className="section-copy">
@@ -199,7 +209,7 @@ export default async function JobsPage({
             <div className="list-row list-row-rich">
               <div>
                 <p>No jobs match the current filters</p>
-                <span>Try clearing the location or status filters to widen the feed.</span>
+                <span>Either broaden the filters here or update your discovery settings so the worker keeps a wider slice.</span>
               </div>
             </div>
           ) : null}
@@ -230,10 +240,10 @@ export default async function JobsPage({
                   <span>{job.company}</span>
                   <div className="meta-badges">
                     <span className="meta-badge">{job.location || "Location not listed"}</span>
+                    <span className="meta-badge">{job.seniority ? `${capitalize(job.seniority)} level` : "Seniority pending"}</span>
                     <span className="meta-badge">{formatWorkMode(job.workMode)}</span>
                     <span className="meta-badge">{job.sourceName}</span>
                     {job.fitScore !== null ? <span className="meta-badge">Fit {job.fitScore}</span> : null}
-                    <span className="meta-badge">{autofill.modeLabel}</span>
                   </div>
                   <div className="row-links">
                     <a href={job.url} className="inline-link" target="_blank" rel="noreferrer">
@@ -267,8 +277,8 @@ export default async function JobsPage({
                       <AutofillLaunchForm applicationId={job.applicationId} label={autofill.label} />
                     ) : null}
                     {job.applicationId ? (
-                      <a href="/applications" className="button button-secondary">
-                        Open queue
+                      <a href={`/applications?focus=${job.applicationId}`} className="button button-secondary">
+                        Review queue
                       </a>
                     ) : null}
                   </div>
@@ -287,7 +297,7 @@ export default async function JobsPage({
 
 function buildResultsHeading(resultCount: number, totalCount: number, filtered: boolean) {
   if (!filtered) {
-    return `All tracked jobs (${totalCount})`;
+    return `All kept jobs (${totalCount})`;
   }
 
   return `${resultCount} matching job${resultCount === 1 ? "" : "s"}`;
@@ -308,4 +318,8 @@ function formatWorkMode(workMode: string | null | undefined) {
     default:
       return "Flexible";
   }
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

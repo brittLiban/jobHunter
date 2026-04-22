@@ -5,7 +5,7 @@ import type {
   ResumeUploadInput,
   StructuredProfile,
 } from "@jobhunter/core";
-import { WorkMode } from "@prisma/client";
+import { JobSeniorityLevel, JobSourceKind, WorkMode } from "@prisma/client";
 
 import { prisma } from "./index";
 import {
@@ -125,6 +125,7 @@ export async function getApplicationsForUser(userId: string) {
           source: true,
         },
       },
+      score: true,
       generatedAnswers: true,
       events: {
         orderBy: {
@@ -288,24 +289,26 @@ export async function upsertOnboardingData(
       targetRoles: preferences.targetRoles,
       targetLocations: preferences.locations,
       workModes: preferences.workModes.map(toPrismaWorkMode),
+      seniorityTargets: preferences.seniorityTargets.map(toPrismaJobSeniority),
       salaryFloor: preferences.salaryFloor ?? null,
       fitThreshold: preferences.fitThreshold,
       dailyTargetVolume: preferences.dailyTargetVolume,
-      includeKeywords: [],
-      excludeKeywords: [],
-      sourceKinds: ["MOCK", "GREENHOUSE", "ASHBY", "LEVER", "WORKABLE"],
+      includeKeywords: preferences.includeKeywords,
+      excludeKeywords: preferences.excludeKeywords,
+      sourceKinds: preferences.sourceKinds.map(toPrismaJobSourceKind),
     },
     create: {
       userId,
       targetRoles: preferences.targetRoles,
       targetLocations: preferences.locations,
       workModes: preferences.workModes.map(toPrismaWorkMode),
+      seniorityTargets: preferences.seniorityTargets.map(toPrismaJobSeniority),
       salaryFloor: preferences.salaryFloor ?? null,
       fitThreshold: preferences.fitThreshold,
       dailyTargetVolume: preferences.dailyTargetVolume,
-      includeKeywords: [],
-      excludeKeywords: [],
-      sourceKinds: ["MOCK", "GREENHOUSE", "ASHBY", "LEVER", "WORKABLE"],
+      includeKeywords: preferences.includeKeywords,
+      excludeKeywords: preferences.excludeKeywords,
+      sourceKinds: preferences.sourceKinds.map(toPrismaJobSourceKind),
     },
   });
 
@@ -583,5 +586,37 @@ function toPrismaWorkMode(mode: JobPreferences["workModes"][number]) {
     case "flexible":
     default:
       return WorkMode.FLEXIBLE;
+  }
+}
+
+function toPrismaJobSeniority(level: JobPreferences["seniorityTargets"][number]) {
+  switch (level) {
+    case "entry":
+      return JobSeniorityLevel.ENTRY;
+    case "mid":
+      return JobSeniorityLevel.MID;
+    case "senior":
+    default:
+      return JobSeniorityLevel.SENIOR;
+  }
+}
+
+function toPrismaJobSourceKind(kind: JobPreferences["sourceKinds"][number]) {
+  switch (kind) {
+    case "mock":
+      return JobSourceKind.MOCK;
+    case "greenhouse":
+      return JobSourceKind.GREENHOUSE;
+    case "ashby":
+      return JobSourceKind.ASHBY;
+    case "lever":
+      return JobSourceKind.LEVER;
+    case "workable":
+      return JobSourceKind.WORKABLE;
+    case "company_site":
+      return JobSourceKind.COMPANY_SITE;
+    case "extension":
+    default:
+      return JobSourceKind.EXTENSION;
   }
 }

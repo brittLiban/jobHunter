@@ -9,6 +9,7 @@ import { meetsFitThreshold } from "@jobhunter/core";
 
 import { buildJobScorerPrompt } from "./prompt-templates";
 import { createLLMProviderFromEnv, MockLLMProvider, type LLMProvider } from "./provider";
+import { findSemanticCacheValue, recordSemanticCacheValue } from "./semantic-cache";
 
 export class JobScorerService {
   constructor(private readonly llm: LLMProvider = createLLMProviderFromEnv()) {}
@@ -36,10 +37,35 @@ export class JobScorerService {
       weightedBreakdown: breakdown,
     };
 
-    return this.llm.generateObject({
+    const cacheInput = {
+      job: {
+        company: input.job.company,
+        title: input.job.title,
+        location: input.job.location,
+        description: input.job.description,
+        sourceKind: input.job.sourceKind,
+      },
+      profile: {
+        currentTitle: input.profile.currentTitle,
+        yearsOfExperience: input.profile.yearsOfExperience,
+        workAuthorization: input.profile.workAuthorization,
+        country: input.profile.country,
+      },
+      resumeText: input.resumeText,
+      threshold: input.threshold ?? 70,
+    };
+
+    const cached = await findSemanticCacheValue<FitAssessment>("job-scorer", cacheInput);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.llm.generateObject({
       ...buildJobScorerPrompt(input),
       fallback,
     });
+    await recordSemanticCacheValue("job-scorer", cacheInput, result);
+    return result;
   }
 }
 

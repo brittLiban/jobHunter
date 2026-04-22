@@ -69,17 +69,17 @@ export default async function DashboardPage({
             </button>
           </form>
           <a href="/jobs?locationPreset=greater_seattle" className="button button-secondary">
-            Seattle jobs
+            Seattle discovery
           </a>
           <a href="/applications" className="button button-secondary">
-            Open application queue
+            Open review queue
           </a>
         </div>
       </section>
 
       <section className="app-grid app-metrics">
         <article className="app-card">
-          <span>Tracked jobs</span>
+          <span>Matched jobs</span>
           <strong>{overview.jobsFound}</strong>
         </article>
         <article className="app-card">

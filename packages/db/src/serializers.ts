@@ -3,6 +3,7 @@ import type {
   ApplicationStatus as CoreApplicationStatus,
   DashboardSnapshot,
   GeneratedAnswer,
+  JobSeniorityAssessment,
   JobPosting,
   JobPreferences,
   Notification,
@@ -96,6 +97,11 @@ export function serializeApplicationRecord(
     company: application.job.company,
     role: application.job.title,
     source: application.job.source.name,
+    sourceKind: application.job.source.kind.toLowerCase() as JobPosting["sourceKind"],
+    location: application.job.locationText ?? "",
+    workMode: application.job.workMode ? (application.job.workMode.toLowerCase() as JobPosting["workMode"]) : null,
+    seniority: application.job.seniorityLevel ? application.job.seniorityLevel.toLowerCase() as JobPosting["seniority"] : null,
+    seniorityConfidence: application.job.seniorityConfidence ?? null,
     fitScore: application.fitScoreSnapshot ?? 0,
     status: toCoreApplicationStatus(application.status),
     blockingReason: application.blockingReason,
@@ -139,6 +145,7 @@ export function serializeJobPosting(input: {
   needsUserActionAt: string | null;
   simpleFlowConfirmed: boolean;
   highConfidence: boolean;
+  seniorityAssessment: JobSeniorityAssessment | null;
 } {
   const { job, score, application } = input;
   return {
@@ -149,6 +156,8 @@ export function serializeJobPosting(input: {
     company: job.company,
     title: job.title,
     location: job.locationText ?? "",
+    seniority: job.seniorityLevel ? (job.seniorityLevel.toLowerCase() as JobPosting["seniority"]) : undefined,
+    seniorityConfidence: job.seniorityConfidence ?? undefined,
     workMode: job.workMode ? (job.workMode.toLowerCase() as JobPosting["workMode"]) : undefined,
     salaryMin: job.salaryMin ?? undefined,
     salaryMax: job.salaryMax ?? undefined,
@@ -170,6 +179,13 @@ export function serializeJobPosting(input: {
     needsUserActionAt: application?.needsUserActionAt?.toISOString() ?? null,
     simpleFlowConfirmed: application?.simpleFlowConfirmed ?? false,
     highConfidence: application?.highConfidence ?? false,
+    seniorityAssessment: job.seniorityLevel
+      ? {
+        level: job.seniorityLevel.toLowerCase() as JobSeniorityAssessment["level"],
+        confidence: job.seniorityConfidence ?? 0.6,
+        reasoning: job.seniorityReason ?? "Persisted job seniority classification.",
+      }
+      : null,
   };
 }
 
@@ -219,9 +235,21 @@ export function serializePreferences(preferences: UserPreference | null | undefi
     targetRoles: preferences.targetRoles,
     locations: preferences.targetLocations,
     workModes: preferences.workModes.map((mode) => mode.toLowerCase()) as JobPreferences["workModes"],
+    seniorityTargets: (
+      preferences.seniorityTargets.length > 0
+        ? preferences.seniorityTargets.map((level) => level.toLowerCase())
+        : ["entry", "mid"]
+    ) as JobPreferences["seniorityTargets"],
     salaryFloor: preferences.salaryFloor ?? undefined,
     fitThreshold: preferences.fitThreshold,
     dailyTargetVolume: preferences.dailyTargetVolume,
+    includeKeywords: preferences.includeKeywords,
+    excludeKeywords: preferences.excludeKeywords,
+    sourceKinds: (
+      preferences.sourceKinds.length > 0
+        ? preferences.sourceKinds.map((kind) => kind.toLowerCase())
+        : ["greenhouse", "ashby", "lever", "workable", "mock"]
+    ) as JobPreferences["sourceKinds"],
   };
 }
 
@@ -244,6 +272,7 @@ export function serializeResume(resume: Resume & { versions?: ResumeVersion[] })
 export function serializeApplicationDetail(
   application: Application & {
     job: Job & { source: JobSource };
+    score?: JobScore | null;
     generatedAnswers: PrismaGeneratedAnswer[];
     events: ApplicationEvent[];
     notifications: PrismaNotification[];
@@ -257,8 +286,14 @@ export function serializeApplicationDetail(
     title: application.job.title,
     location: application.job.locationText ?? "",
     workMode: application.job.workMode?.toLowerCase() ?? null,
+    sourceKind: application.job.source.kind.toLowerCase(),
+    seniority: application.job.seniorityLevel?.toLowerCase() ?? null,
+    seniorityConfidence: application.job.seniorityConfidence ?? null,
     source: application.job.source.name,
     fitScore: application.fitScoreSnapshot,
+    scoreConfidence: application.score?.confidence ?? null,
+    topMatches: application.score?.topMatches ?? [],
+    majorGaps: application.score?.majorGaps ?? [],
     status: toCoreApplicationStatus(application.status),
     blockingReason: application.blockingReason,
     manualActionType: application.manualActionType?.toLowerCase() ?? null,

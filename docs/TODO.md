@@ -24,8 +24,10 @@
 
 5. Scoring and tailoring
    - Modular LLM provider layer added with OpenAI, Ollama, and mock fallback paths
+   - Job seniority is now classified on ingest and persisted as `entry`, `mid`, or `senior`
    - `JobScore`, `TailoredDocument`, and `GeneratedAnswer` are persisted
    - Hard-rule threshold enforcement remains outside the model
+   - Normalized request caching now reduces repeat token spend for seniority, scoring, tailoring, and short-answer generation
 
 6. Playwright applier
    - Greenhouse safety logic has been ported into `packages/automation`
@@ -41,6 +43,7 @@
    - Local mock autofill now opens the actual mock application page, fills it in-browser, and records completion back into the tracker
    - Dashboard, jobs, and application views were regrouped around `Ready to run`, `Needs attention`, and `Submitted` so the next action is obvious
    - Jobs and applications now support search, status filtering, and a `Greater Seattle Area` location preset
+   - Discovery controls now gate persistence by source, seniority, location, and include/exclude keyword rules so off-target jobs do not enter the queue
 
 ## Remaining Work
 

@@ -26,13 +26,21 @@ export function profileFromFormData(formData: FormData): StructuredProfile {
 }
 
 export function preferencesFromFormData(formData: FormData): JobPreferences {
+  const workModes = getMultiValueList(formData, "workModes");
+  const seniorityTargets = getMultiValueList(formData, "seniorityTargets");
+  const sourceKinds = getMultiValueList(formData, "sourceKinds");
+
   return {
     targetRoles: splitList(getString(formData, "targetRoles")),
     locations: splitList(getString(formData, "locations")),
-    workModes: splitList(getString(formData, "workModes")) as JobPreferences["workModes"],
+    workModes: (workModes.length > 0 ? workModes : splitList(getString(formData, "workModes"))) as JobPreferences["workModes"],
+    seniorityTargets: (seniorityTargets.length > 0 ? seniorityTargets : ["entry", "mid"]) as JobPreferences["seniorityTargets"],
     salaryFloor: getOptionalNumber(formData, "salaryFloor"),
     fitThreshold: Number(getString(formData, "fitThreshold")),
     dailyTargetVolume: Number(getString(formData, "dailyTargetVolume")),
+    includeKeywords: splitList(getString(formData, "includeKeywords")),
+    excludeKeywords: splitList(getString(formData, "excludeKeywords")),
+    sourceKinds: (sourceKinds.length > 0 ? sourceKinds : ["greenhouse", "ashby", "lever", "workable", "mock"]) as JobPreferences["sourceKinds"],
   };
 }
 
@@ -57,5 +65,12 @@ function splitList(value: string) {
   return value
     .split(",")
     .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getMultiValueList(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .map((value) => String(value).trim())
     .filter(Boolean);
 }

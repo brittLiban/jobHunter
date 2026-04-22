@@ -4,6 +4,7 @@ import { PhraseVariationTracker } from "@jobhunter/core";
 
 import { buildShortAnswerPrompt } from "./prompt-templates";
 import { createLLMProviderFromEnv, type LLMProvider } from "./provider";
+import { findSemanticCacheValue, recordSemanticCacheValue } from "./semantic-cache";
 
 export class ShortAnswerGeneratorService {
   constructor(
@@ -40,9 +41,30 @@ export class ShortAnswerGeneratorService {
       ],
     };
 
-    return this.llm.generateObject({
+    const cacheInput = {
+      job: {
+        company: input.job.company,
+        title: input.job.title,
+        description: input.job.description,
+      },
+      profile: {
+        currentTitle: input.profile.currentTitle,
+        currentCompany: input.profile.currentCompany,
+        yearsOfExperience: input.profile.yearsOfExperience,
+      },
+      tailoredResume: input.tailoredResume,
+    };
+
+    const cached = await findSemanticCacheValue<GeneratedAnswerSet>("short-answer-generator", cacheInput);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.llm.generateObject({
       ...buildShortAnswerPrompt(input),
       fallback,
     });
+    await recordSemanticCacheValue("short-answer-generator", cacheInput, result);
+    return result;
   }
 }

@@ -50,12 +50,12 @@ export function describeTrackerState(input: TrackerStateInput): TrackerStateSumm
       };
     case "needs_user_action":
       return {
-        label: "Started on site, needs you",
+        label: "Paused and needs attention",
         detail: `${buildPauseSummary(input)} ${buildPreparedSummary(input.preparedPayload)} Use Resume paused step or retry live autofill to continue from the saved point.`,
       };
     case "prepared":
       return {
-        label: "Ready to open and fill",
+        label: "Ready to run",
         detail: `${buildPreparedSummary(input.preparedPayload)} Use the autofill action on this row to start the saved packet.`,
       };
     case "queued":

@@ -59,6 +59,12 @@ enum JobSourceKind {
   EXTENSION
 }
 
+enum JobSeniorityLevel {
+  ENTRY
+  MID
+  SENIOR
+}
+
 enum NotificationType {
   INFO
   SUCCESS
@@ -194,6 +200,7 @@ model UserPreference {
   targetRoles      String[]
   targetLocations  String[]
   workModes        WorkMode[]
+  seniorityTargets JobSeniorityLevel[] @default([])
   salaryFloor      Int?
   fitThreshold     Int             @default(70)
   dailyTargetVolume Int            @default(15)
@@ -259,6 +266,9 @@ model Job {
   company          String
   title            String
   locationText     String?
+  seniorityLevel   JobSeniorityLevel?
+  seniorityConfidence Float?
+  seniorityReason  String?
   workMode         WorkMode?
   employmentType   String?
   salaryMin        Int?

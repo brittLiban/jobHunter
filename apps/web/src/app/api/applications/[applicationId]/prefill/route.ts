@@ -47,9 +47,19 @@ export async function GET(
       targetRoles: application.user.preferences.targetRoles,
       locations: application.user.preferences.targetLocations,
       workModes: application.user.preferences.workModes.map((mode) => mode.toLowerCase()) as Array<"remote" | "hybrid" | "on_site" | "flexible">,
+      seniorityTargets:
+        application.user.preferences.seniorityTargets.length > 0
+          ? application.user.preferences.seniorityTargets.map((level) => level.toLowerCase()) as Array<"entry" | "mid" | "senior">
+          : ["entry", "mid"],
       salaryFloor: application.user.preferences.salaryFloor ?? undefined,
       fitThreshold: application.user.preferences.fitThreshold,
       dailyTargetVolume: application.user.preferences.dailyTargetVolume,
+      includeKeywords: application.user.preferences.includeKeywords,
+      excludeKeywords: application.user.preferences.excludeKeywords,
+      sourceKinds:
+        application.user.preferences.sourceKinds.length > 0
+          ? application.user.preferences.sourceKinds.map((kind) => kind.toLowerCase()) as Array<"mock" | "greenhouse" | "ashby" | "lever" | "workable" | "company_site" | "extension">
+          : ["greenhouse", "ashby", "lever", "workable", "mock"],
     },
     generatedAnswers: application.generatedAnswers.map((answer) => ({
       kind: answer.kind.toLowerCase() as "why_role" | "why_fit" | "anything_else" | "custom",

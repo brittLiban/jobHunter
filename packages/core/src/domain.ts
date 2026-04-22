@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   answerKindSchema,
   applicationStatusSchema,
+  jobSenioritySchema,
   jobSourceKindSchema,
   manualActionTypeSchema,
   notificationTypeSchema,
@@ -60,9 +61,13 @@ export const jobPreferencesSchema = z.object({
   targetRoles: z.array(z.string().min(1)).min(1),
   locations: z.array(z.string().min(1)).min(1),
   workModes: z.array(workModeSchema).min(1),
+  seniorityTargets: z.array(jobSenioritySchema).min(1).default(["entry", "mid"]),
   salaryFloor: z.number().int().nonnegative().optional(),
   fitThreshold: z.number().int().min(0).max(100).default(70),
   dailyTargetVolume: z.number().int().min(1).max(100).default(15),
+  includeKeywords: z.array(z.string().min(1)).default([]),
+  excludeKeywords: z.array(z.string().min(1)).default([]),
+  sourceKinds: z.array(jobSourceKindSchema).min(1).default(["greenhouse", "ashby", "lever", "workable", "mock"]),
 });
 
 export const jobPostingSchema = z.object({
@@ -73,6 +78,8 @@ export const jobPostingSchema = z.object({
   company: z.string(),
   title: z.string(),
   location: z.string(),
+  seniority: jobSenioritySchema.optional(),
+  seniorityConfidence: z.number().min(0).max(1).optional(),
   workMode: workModeSchema.optional(),
   salaryMin: z.number().int().nonnegative().optional(),
   salaryMax: z.number().int().nonnegative().optional(),
@@ -98,6 +105,12 @@ export const fitAssessmentSchema = z.object({
   topMatches: z.array(z.string().min(1)).max(5),
   majorGaps: z.array(z.string().min(1)).max(5),
   weightedBreakdown: weightedBreakdownSchema,
+});
+
+export const jobSeniorityAssessmentSchema = z.object({
+  level: jobSenioritySchema,
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string().min(1),
 });
 
 export const tailoredResumeDraftSchema = z.object({
@@ -128,6 +141,11 @@ export const applicationRecordSchema = z.object({
   company: z.string(),
   role: z.string(),
   source: z.string(),
+  sourceKind: jobSourceKindSchema.optional(),
+  location: z.string().default(""),
+  workMode: workModeSchema.nullable().optional(),
+  seniority: jobSenioritySchema.nullable().optional(),
+  seniorityConfidence: z.number().min(0).max(1).nullable().optional(),
   fitScore: z.number().int().min(0).max(100),
   status: applicationStatusSchema,
   blockingReason: z.string().nullable().default(null),
@@ -179,6 +197,7 @@ export type JobPreferences = z.infer<typeof jobPreferencesSchema>;
 export type JobPosting = z.infer<typeof jobPostingSchema>;
 export type WeightedBreakdown = z.infer<typeof weightedBreakdownSchema>;
 export type FitAssessment = z.infer<typeof fitAssessmentSchema>;
+export type JobSeniorityAssessment = z.infer<typeof jobSeniorityAssessmentSchema>;
 export type TailoredResumeDraft = z.infer<typeof tailoredResumeDraftSchema>;
 export type GeneratedAnswer = z.infer<typeof generatedAnswerSchema>;
 export type GeneratedAnswerSet = z.infer<typeof generatedAnswerSetSchema>;

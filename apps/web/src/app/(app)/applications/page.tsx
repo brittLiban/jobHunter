@@ -12,7 +12,6 @@ import {
   formatLocationPreset,
   matchesLocation,
   matchesSearch,
-  matchesStatus,
   readSearchParam,
 } from "@/lib/list-filters";
 import { loadApplicationsPageData } from "@/lib/page-data";
@@ -32,6 +31,7 @@ type ApplicationsPageParams = {
   status?: string;
   locationPreset?: string;
   locationText?: string;
+  focus?: string;
 };
 
 export default async function ApplicationsPage({
@@ -43,16 +43,18 @@ export default async function ApplicationsPage({
   const params = await searchParams;
   const notice = buildApplicationsNotice(params);
   const q = readSearchParam(params.q);
-  const statusFilter = readSearchParam(params.status) || "all";
+  const statusFilter = readSearchParam(params.status) || "actionable";
   const locationPreset = readSearchParam(params.locationPreset) || "all";
   const locationText = readSearchParam(params.locationText);
+  const focusId = readSearchParam(params.focus);
   const applications = await loadApplicationsPageData(user.id);
+
   const filteredApplications = applications.filter((application) =>
     matchesSearch(
       [application.company, application.title, application.location, application.source],
       q,
     )
-    && matchesStatus(application.status, statusFilter)
+    && matchesApplicationStatus(application.status, statusFilter)
     && matchesLocation({
       location: application.location,
       preset: locationPreset,
@@ -60,27 +62,27 @@ export default async function ApplicationsPage({
     }),
   );
 
-  const submittedApplications = filteredApplications.filter((application) =>
-    application.status === "auto_submitted" || application.status === "submitted",
+  const reviewableApplications = filteredApplications.filter((application) =>
+    ["prepared", "needs_user_action", "queued"].includes(application.status),
   );
-  const attentionApplications = filteredApplications.filter((application) => application.status === "needs_user_action");
-  const readyApplications = filteredApplications.filter((application) => application.status === "prepared");
-  const queuedApplications = filteredApplications.filter((application) => application.status === "queued");
-  const recentEvents = filteredApplications
-    .flatMap((application) =>
-      application.events.slice(0, 1).map((event) => ({
-        applicationId: application.id,
-        company: application.company,
-        title: application.title,
-        event,
-      })),
-    )
-    .slice(0, 6);
+  const focusPool =
+    statusFilter === "actionable"
+      ? (reviewableApplications.length > 0 ? reviewableApplications : filteredApplications)
+      : filteredApplications;
+  const focusedApplication = focusPool.find((application) => application.id === focusId) ?? focusPool[0] ?? null;
+  const focusedTrackerSummary = focusedApplication ? describeTrackerState(focusedApplication) : null;
+  const focusedIndex = focusedApplication ? focusPool.findIndex((application) => application.id === focusedApplication.id) : -1;
+  const previousApplication = focusedIndex > 0 ? focusPool[focusedIndex - 1] : null;
+  const nextApplication = focusedIndex >= 0 && focusedIndex < focusPool.length - 1 ? focusPool[focusedIndex + 1] : null;
+
+  const readyCount = filteredApplications.filter((application) => application.status === "prepared").length;
+  const needsAttentionCount = filteredApplications.filter((application) => application.status === "needs_user_action").length;
+  const submittedCount = filteredApplications.filter((application) => ["auto_submitted", "submitted"].includes(application.status)).length;
 
   return (
     <AppShell
-      title="Applications"
-      description="See what has already been submitted, what is ready for automation, and what still needs a human step."
+      title="Review Queue"
+      description="Rotate through the jobs you actually want, inspect the fit summary, and launch autofill from the selected application."
       userName={user.fullName ?? user.email}
       currentPath="/applications"
     >
@@ -95,37 +97,32 @@ export default async function ApplicationsPage({
 
       <section className="app-grid app-metrics">
         <article className="app-card">
-          <span>Results</span>
+          <span>In view</span>
           <strong>{filteredApplications.length}</strong>
-          <p className="metric-note">filtered application queue</p>
-        </article>
-        <article className="app-card">
-          <span>Submitted</span>
-          <strong>{submittedApplications.length}</strong>
-        </article>
-        <article className="app-card">
-          <span>Needs attention</span>
-          <strong>{attentionApplications.length}</strong>
         </article>
         <article className="app-card">
           <span>Ready to run</span>
-          <strong>{readyApplications.length}</strong>
+          <strong>{readyCount}</strong>
         </article>
         <article className="app-card">
-          <span>Queued</span>
-          <strong>{queuedApplications.length}</strong>
+          <span>Needs attention</span>
+          <strong>{needsAttentionCount}</strong>
+        </article>
+        <article className="app-card">
+          <span>Submitted</span>
+          <strong>{submittedCount}</strong>
         </article>
       </section>
 
       <section className="app-card app-toolbar">
         <div>
           <p className="eyebrow">Queue Filters</p>
-          <h2>Slice the application queue by status or place</h2>
+          <h2>Control what you review</h2>
           <p className="section-copy">
-            Location preset: {formatLocationPreset(locationPreset)}{locationText ? ` · Custom contains "${locationText}"` : ""}.
+            Default mode shows actionable items only. Use location and search filters to narrow the queue, including Greater Seattle.
           </p>
         </div>
-        <form action="/applications" method="get" className="filter-bar">
+        <form action="/applications" method="get" className="filter-bar review-filter-bar">
           <label className="form-field form-field-inline">
             <span>Search</span>
             <input name="q" defaultValue={q} placeholder="Company or role" />
@@ -133,13 +130,12 @@ export default async function ApplicationsPage({
           <label className="form-field form-field-inline">
             <span>Status</span>
             <select name="status" defaultValue={statusFilter}>
-              <option value="all">All statuses</option>
+              <option value="actionable">Actionable only</option>
               <option value="prepared">Ready to run</option>
               <option value="needs_user_action">Needs attention</option>
-              <option value="auto_submitted">Auto-submitted</option>
-              <option value="submitted">Submitted</option>
               <option value="queued">Queued</option>
-              <option value="skipped">Skipped</option>
+              <option value="submitted">Submitted</option>
+              <option value="all">All statuses</option>
             </select>
           </label>
           <label className="form-field form-field-inline">
@@ -153,7 +149,7 @@ export default async function ApplicationsPage({
           </label>
           <label className="form-field form-field-inline">
             <span>Custom location</span>
-            <input name="locationText" defaultValue={locationText} placeholder="Bellevue, San Francisco, etc." />
+            <input name="locationText" defaultValue={locationText} placeholder="Bellevue, Seattle, remote" />
           </label>
           <div className="filter-actions">
             <button type="submit" className="button button-primary">
@@ -166,306 +162,307 @@ export default async function ApplicationsPage({
         </form>
       </section>
 
-      <section className="panel-grid-two">
-        <article className="app-card">
+      <section className="review-layout">
+        <aside className="app-card review-rail">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Needs Attention</p>
-              <h2>Human steps only</h2>
+              <p className="eyebrow">Queue</p>
+              <h2>{reviewableApplications.length > 0 ? "Rotate the shortlist" : "Filtered results"}</h2>
             </div>
+            <p className="section-copy">{formatLocationPreset(locationPreset)}</p>
           </div>
-          <div className="summary-list">
-            {attentionApplications.length === 0 ? (
-              <div className="summary-item">
-                <p>No blocked applications right now</p>
-                <span>Sites that pause on CAPTCHA, verification, or unknown required fields will show up here.</span>
+          <div className="review-rail-list">
+            {focusPool.length === 0 ? (
+              <div className="review-rail-item review-rail-item-empty">
+                <p>No applications match the current filters</p>
+                <span>Broaden the status or location filters to pull more jobs into view.</span>
               </div>
             ) : null}
-            {attentionApplications.slice(0, 5).map((application) => {
-              const targetUrl = application.applyUrl ?? application.jobUrl;
-              const canAutofill = supportsAutofill(targetUrl);
-              const autofill = getAutofillActionSummary({
-                status: application.status,
-                targetUrl,
-              });
-              return (
-                <div key={application.id} className="summary-item">
-                  <div className="summary-item-header">
-                    <div>
-                      <p>{application.company}</p>
-                      <span>{application.title}</span>
-                    </div>
-                    <StatusPill status={application.status} />
-                  </div>
-                  <div className="meta-badges">
-                    <span className="meta-badge">{application.location || "Location not listed"}</span>
-                    <span className="meta-badge">{application.source}</span>
-                    <span className="meta-badge">{autofill.modeLabel}</span>
-                    {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
-                  </div>
-                  <span>{describeTrackerState(application).detail}</span>
-                  <div className="row-links">
-                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View posting
-                    </a>
-                    {application.applyUrl ? (
-                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open application only
-                      </a>
-                    ) : null}
-                    {application.lastAutomationUrl ? (
-                      <a href={application.lastAutomationUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Resume paused step
-                      </a>
-                    ) : null}
-                  </div>
-                  <div className="list-actions">
-                    {canAutofill ? (
-                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
-                    ) : null}
-                    {application.status === "needs_user_action" && application.lastAutomationUrl ? (
-                      <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
-                        Resume paused step
-                      </a>
-                    ) : null}
-                    <form action={`/api/applications/${application.id}/reopen`} method="post">
-                      <button type="submit" className="button button-secondary">
-                        Requeue
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </article>
-
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Ready To Run</p>
-              <h2>Prepared packets</h2>
-            </div>
-          </div>
-          <div className="summary-list">
-            {readyApplications.length === 0 ? (
-              <div className="summary-item">
-                <p>No prepared applications in this slice</p>
-                <span>Run the worker or relax the filters to see more prepared packets.</span>
-              </div>
-            ) : null}
-            {readyApplications.slice(0, 5).map((application) => {
-              const targetUrl = application.applyUrl ?? application.jobUrl;
-              const canAutofill = supportsAutofill(targetUrl);
-              const autofill = getAutofillActionSummary({
-                status: application.status,
-                targetUrl,
-              });
-              return (
-                <div key={application.id} className="summary-item">
-                  <div className="summary-item-header">
-                    <div>
-                      <p>{application.company}</p>
-                      <span>{application.title}</span>
-                    </div>
-                    <StatusPill status={application.status} />
-                  </div>
-                  <div className="meta-badges">
-                    <span className="meta-badge">{application.location || "Location not listed"}</span>
-                    <span className="meta-badge">{application.source}</span>
-                    <span className="meta-badge">{autofill.modeLabel}</span>
-                    {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
-                  </div>
-                  <span>{describeTrackerState(application).detail}</span>
-                  <div className="row-links">
-                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View posting
-                    </a>
-                    {application.applyUrl ? (
-                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open application only
-                      </a>
-                    ) : null}
-                  </div>
-                  <div className="list-actions">
-                    {canAutofill ? (
-                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
-                    ) : null}
-                    <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
-                      <button type="submit" className="button button-secondary">
-                        Mark submitted
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </article>
-      </section>
-
-      <section className="panel-grid-two">
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Submitted</p>
-              <h2>Confirmed finishes</h2>
-            </div>
-          </div>
-          <div className="summary-list">
-            {submittedApplications.length === 0 ? (
-              <div className="summary-item">
-                <p>No confirmed submissions in this slice</p>
-                <span>Submitted applications only land here after a detected confirmation or manual confirmation.</span>
-              </div>
-            ) : null}
-            {submittedApplications.slice(0, 5).map((application) => (
-              <div key={application.id} className="summary-item">
-                <div className="summary-item-header">
+            {focusPool.map((application) => (
+              <a
+                key={application.id}
+                href={buildFocusHref({
+                  ...params,
+                  q,
+                  status: statusFilter,
+                  locationPreset,
+                  locationText,
+                }, application.id)}
+                className={`review-rail-item ${focusedApplication?.id === application.id ? "review-rail-item-active" : ""}`}
+              >
+                <div className="review-rail-top">
                   <div>
                     <p>{application.company}</p>
                     <span>{application.title}</span>
                   </div>
                   <StatusPill status={application.status} />
                 </div>
-                <div className="meta-badges">
-                  <span className="meta-badge">{application.location || "Location not listed"}</span>
-                  <span className="meta-badge">{application.source}</span>
-                  {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
-                </div>
-                <span>{describeTrackerState(application).detail}</span>
-                <p className="row-help">Submitted {formatTimestamp(application.submittedAt ?? application.updatedAt)}</p>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Latest Activity</p>
-              <h2>Recent lifecycle events</h2>
-            </div>
-          </div>
-          <div className="summary-list">
-            {recentEvents.length === 0 ? (
-              <div className="summary-item">
-                <p>No recent events</p>
-                <span>Activity will appear here after the worker prepares or updates applications.</span>
-              </div>
-            ) : null}
-            {recentEvents.map((item) => (
-              <div key={item.event.id} className="summary-item">
-                <p>{item.company} · {item.event.title}</p>
-                <span>{item.title}</span>
+                <span>{application.location || "Location not listed"}</span>
                 <p className="row-help">
-                  {item.event.detail ?? item.event.type} · {formatTimestamp(item.event.createdAt)}
+                  {application.fitScore !== null ? `Fit ${application.fitScore}` : "No fit score"} · {application.seniority ?? "seniority pending"}
                 </p>
-              </div>
+              </a>
             ))}
           </div>
+        </aside>
+
+        <article className="app-card review-detail">
+          {!focusedApplication ? (
+            <div className="review-empty-state">
+              <p className="eyebrow">No focused application</p>
+              <h2>Pick a job from the queue</h2>
+              <p className="section-copy">When a job is selected, its fit summary and autofill actions will show here.</p>
+            </div>
+          ) : (
+            <>
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">Selected Application</p>
+                  <h2>{focusedApplication.company} · {focusedApplication.title}</h2>
+                </div>
+                <StatusPill status={focusedApplication.status} />
+              </div>
+
+              <div className="review-detail-meta">
+                <span>{focusedApplication.location || "Location not listed"}</span>
+                <span>{focusedApplication.source}</span>
+                <span>{focusedApplication.seniority ? `${capitalize(focusedApplication.seniority)} level` : "Seniority pending"}</span>
+                <span>{focusedApplication.fitScore !== null ? `Fit ${focusedApplication.fitScore}` : "No fit score"}</span>
+              </div>
+
+              {focusedTrackerSummary ? (
+                <p className="eyebrow">{focusedTrackerSummary.label}</p>
+              ) : null}
+              <p className="review-detail-copy">{focusedTrackerSummary?.detail}</p>
+
+              <div className="review-action-row">
+                {renderAutofillAction(focusedApplication)}
+                {focusedApplication.applyUrl ? (
+                  <a href={focusedApplication.applyUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                    Open application only
+                  </a>
+                ) : null}
+                <a href={focusedApplication.jobUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                  View posting
+                </a>
+                {focusedApplication.lastAutomationUrl ? (
+                  <a href={focusedApplication.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                    Resume paused step
+                  </a>
+                ) : null}
+              </div>
+
+              <div className="review-nav-row">
+                {previousApplication ? (
+                  <a
+                    href={buildFocusHref({
+                      ...params,
+                      q,
+                      status: statusFilter,
+                      locationPreset,
+                      locationText,
+                    }, previousApplication.id)}
+                    className="button button-secondary"
+                  >
+                    Previous
+                  </a>
+                ) : <span />}
+                <p className="row-help">
+                  {focusedIndex + 1} of {focusPool.length} in this queue
+                </p>
+                {nextApplication ? (
+                  <a
+                    href={buildFocusHref({
+                      ...params,
+                      q,
+                      status: statusFilter,
+                      locationPreset,
+                      locationText,
+                    }, nextApplication.id)}
+                    className="button button-secondary"
+                  >
+                    Next
+                  </a>
+                ) : <span />}
+              </div>
+
+              <div className="review-detail-grid">
+                <div className="review-detail-panel">
+                  <p className="eyebrow">Top Matches</p>
+                  {focusedApplication.topMatches.length === 0 ? (
+                    <p className="section-copy">No stored fit explanation yet.</p>
+                  ) : (
+                    <ul className="flat-list">
+                      {focusedApplication.topMatches.map((item: string) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="review-detail-panel">
+                  <p className="eyebrow">Major Gaps</p>
+                  {focusedApplication.majorGaps.length === 0 ? (
+                    <p className="section-copy">No major gap callouts were saved for this application.</p>
+                  ) : (
+                    <ul className="flat-list">
+                      {focusedApplication.majorGaps.map((item: string) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              <div className="review-detail-grid">
+                <div className="review-detail-panel">
+                  <p className="eyebrow">Prepared Materials</p>
+                  <p className="section-copy">
+                    {focusedApplication.generatedAnswers.length} short answer{focusedApplication.generatedAnswers.length === 1 ? "" : "s"} saved
+                  </p>
+                  <p className="row-help">
+                    Updated {formatTimestamp(focusedApplication.updatedAt)}
+                    {focusedApplication.scoreConfidence !== null ? ` · Score confidence ${Math.round(focusedApplication.scoreConfidence * 100)}%` : ""}
+                  </p>
+                </div>
+                <div className="review-detail-panel">
+                  <p className="eyebrow">Latest Event</p>
+                  {focusedApplication.events[0] ? (
+                    <>
+                      <p>{focusedApplication.events[0].title}</p>
+                      <p className="row-help">
+                        {focusedApplication.events[0].detail ?? focusedApplication.events[0].type} · {formatTimestamp(focusedApplication.events[0].createdAt)}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="section-copy">No lifecycle event has been stored yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="review-secondary-actions">
+                {focusedApplication.status === "needs_user_action" ? (
+                  <form action={`/api/applications/${focusedApplication.id}/reopen`} method="post">
+                    <button type="submit" className="button button-secondary">
+                      Requeue
+                    </button>
+                  </form>
+                ) : null}
+                {!["auto_submitted", "submitted", "skipped", "rejected", "offer"].includes(focusedApplication.status) ? (
+                  <form action={`/api/applications/${focusedApplication.id}/mark-submitted`} method="post">
+                    <button type="submit" className="button button-secondary">
+                      Mark submitted
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            </>
+          )}
         </article>
       </section>
 
       <section className="app-card">
         <div className="card-heading">
           <div>
-            <p className="eyebrow">Full Tracker</p>
-            <h2>All matching applications</h2>
+            <p className="eyebrow">Compact List</p>
+            <h2>All filtered applications</h2>
           </div>
         </div>
         <div className="list-table">
-          {filteredApplications.length === 0 ? (
-            <div className="list-row list-row-rich">
+          {filteredApplications.map((application) => (
+            <div key={application.id} className="list-row review-table-row">
               <div>
-                <p>No applications match the current filters</p>
-                <span>Clear the status or location filters to widen the queue.</span>
+                <p>{application.company}</p>
+                <span>{application.title}</span>
+              </div>
+              <div>
+                <p>{application.location || "Location not listed"}</p>
+                <span>{application.seniority ? `${capitalize(application.seniority)} level` : "Seniority pending"}</span>
+              </div>
+              <div>
+                <p>{application.fitScore !== null ? `Fit ${application.fitScore}` : "No fit score"}</p>
+                <span>{application.source}</span>
+              </div>
+              <div className="list-actions">
+                <a
+                  href={buildFocusHref({
+                    ...params,
+                    q,
+                    status: statusFilter,
+                    locationPreset,
+                    locationText,
+                  }, application.id)}
+                  className="button button-secondary"
+                >
+                  Review
+                </a>
+              </div>
+              <div className="row-status">
+                <StatusPill status={application.status} />
               </div>
             </div>
-          ) : null}
-          {filteredApplications.map((application) => {
-            const state = describeTrackerState(application);
-            const targetUrl = application.applyUrl ?? application.jobUrl;
-            const canMarkSubmitted = !["auto_submitted", "submitted", "skipped", "rejected", "offer"].includes(application.status);
-            const canAutofill = ["prepared", "needs_user_action"].includes(application.status)
-              && supportsAutofill(targetUrl);
-            const autofill = getAutofillActionSummary({
-              status: application.status,
-              targetUrl,
-            });
-
-            return (
-              <div key={application.id} className="list-row list-row-rich job-row">
-                <div>
-                  <p>{application.company}</p>
-                  <span>{application.title}</span>
-                  <div className="meta-badges">
-                    <span className="meta-badge">{application.location || "Location not listed"}</span>
-                    <span className="meta-badge">{application.source}</span>
-                    <span className="meta-badge">{autofill.modeLabel}</span>
-                    {application.workMode ? <span className="meta-badge">{formatWorkMode(application.workMode)}</span> : null}
-                    {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
-                  </div>
-                  <div className="row-links">
-                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View posting
-                    </a>
-                    {application.applyUrl ? (
-                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open application only
-                      </a>
-                    ) : null}
-                    {application.lastAutomationUrl ? (
-                      <a href={application.lastAutomationUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Resume paused step
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-                <div>
-                  <p>{state.label}</p>
-                  <span>{state.detail}</span>
-                  <p className="row-help">
-                    {application.generatedAnswers.length} saved answer{application.generatedAnswers.length === 1 ? "" : "s"} · Updated {formatTimestamp(application.updatedAt)}
-                  </p>
-                </div>
-                <div className="row-actions-column">
-                  <StatusPill status={application.status} />
-                  <div className="list-actions">
-                    {canAutofill ? (
-                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
-                    ) : null}
-                    {application.status === "needs_user_action" && application.lastAutomationUrl ? (
-                      <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
-                        Resume paused step
-                      </a>
-                    ) : null}
-                    {canMarkSubmitted ? (
-                      <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
-                        <button type="submit" className="button button-secondary">
-                          Mark submitted
-                        </button>
-                      </form>
-                    ) : null}
-                    {application.status === "needs_user_action" ? (
-                      <form action={`/api/applications/${application.id}/reopen`} method="post">
-                        <button type="submit" className="button button-secondary">
-                          Requeue
-                        </button>
-                      </form>
-                    ) : null}
-                  </div>
-                  <p className="row-help">
-                    {canAutofill ? autofill.hint : "Open the employer page directly when you want to inspect the form without running automation."}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+          ))}
         </div>
       </section>
     </AppShell>
   );
+}
+
+function renderAutofillAction(application: {
+  id: string;
+  status: string;
+  applyUrl?: string | null;
+  jobUrl: string;
+}) {
+  const targetUrl = application.applyUrl ?? application.jobUrl;
+  const canAutofill = ["prepared", "needs_user_action"].includes(application.status) && supportsAutofill(targetUrl);
+  if (!canAutofill) {
+    return null;
+  }
+
+  const autofill = getAutofillActionSummary({
+    status: application.status,
+    targetUrl,
+  });
+
+  return <AutofillLaunchForm applicationId={application.id} label={autofill.label} />;
+}
+
+function matchesApplicationStatus(status: string, filter: string) {
+  if (!filter || filter === "actionable") {
+    return ["prepared", "needs_user_action", "queued"].includes(status);
+  }
+
+  if (filter === "submitted") {
+    return ["submitted", "auto_submitted"].includes(status);
+  }
+
+  if (filter === "all") {
+    return true;
+  }
+
+  return status === filter;
+}
+
+function buildFocusHref(params: ApplicationsPageParams, focus: string) {
+  const next = new URLSearchParams();
+  if (params.q) {
+    next.set("q", params.q);
+  }
+  if (params.status) {
+    next.set("status", params.status);
+  }
+  if (params.locationPreset) {
+    next.set("locationPreset", params.locationPreset);
+  }
+  if (params.locationText) {
+    next.set("locationText", params.locationText);
+  }
+  next.set("focus", focus);
+  return `/applications?${next.toString()}`;
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function buildApplicationsNotice(params: ApplicationsPageParams): ApplicationsPageNotice | null {
@@ -518,17 +515,4 @@ function buildApplicationsNotice(params: ApplicationsPageParams): ApplicationsPa
   }
 
   return null;
-}
-
-function formatWorkMode(workMode: string) {
-  switch (workMode) {
-    case "remote":
-      return "Remote";
-    case "hybrid":
-      return "Hybrid";
-    case "on_site":
-      return "On-site";
-    default:
-      return "Flexible";
-  }
 }

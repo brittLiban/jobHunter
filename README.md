@@ -23,14 +23,18 @@ Implemented in the TypeScript stack:
 - authenticated app routes for dashboard, jobs, applications, profile, onboarding, and resumes
 - authenticated operator UI regrouped around `Ready to run`, `Needs attention`, and `Submitted`
 - jobs and applications filters for search, status, and location presets including `Greater Seattle Area`
+- discovery controls for enabled sources, seniority targets, include keywords, and exclude keywords
+- off-target jobs are filtered before persistence, so irrelevant locations and disabled sources do not enter the queue
 - structured user profile and preferences persisted in Postgres via Prisma
 - resume upload persistence plus tailored `ResumeVersion` records
 - Prisma-backed dashboard, jobs, applications, and notifications pages
 - modular job ingestion adapters for Mock, Greenhouse, Ashby, Lever, and Workable
+- LLM-backed seniority classification persisted on `Job` as `entry`, `mid`, or `senior`
 - rules-first scoring pipeline with persisted `JobScore`, `TailoredDocument`, and `GeneratedAnswer` records
 - worker pipeline that discovers jobs, scores fit, prepares applications, tracks events, and raises notifications
 - Playwright autofill flows for Greenhouse and the local mock apply pages
 - LLM-assisted field resolution with semantic cache persistence for unfamiliar field labels
+- normalized LLM request caching for seniority classification, scoring, resume tailoring, and short-answer generation
 - manual-action workflow with prepared payload persistence, saved resume points, and resume/reopen support
 - browser-visible mock autofill handoff that opens the local apply page, fills it from the prepared packet, and records the confirmation back into the tracker
 - rolling 24-hour daily target enforcement that queues overflow jobs before tailoring work is generated
@@ -45,6 +49,7 @@ Validated locally on April 22, 2026:
 - the confirmation page moved the application to `auto_submitted`
 - the live queue rendered `Run live autofill` actions for supported Greenhouse applications
 - the jobs page filtered the feed down to a Greater Seattle area slice
+- a clean bootstrap account using a real local resume produced only Mock jobs targeted to Seattle or remote U.S. settings
 
 Still intentionally incomplete:
 
@@ -149,6 +154,8 @@ Important behavior:
 - the uploaded file and the pasted base resume text are both important
 - the file is used for resume upload during automation
 - the pasted base text is what scoring, tailoring, and answer generation use
+- the enabled source list, seniority targets, and include/exclude keywords decide what the worker is allowed to persist at all
+- if a job falls outside those discovery controls, it is dropped before it reaches the review queue
 - `Open browser autofill` is the action that starts the local visible mock flow
 - `Run live autofill` starts Playwright on a supported Greenhouse application
 - `Open application only` opens the employer page directly and does not trigger automation by itself
@@ -182,6 +189,13 @@ If the stack is already running and you want the latest code live after local ch
 
 ```powershell
 docker compose up -d --build web worker
+```
+
+If you want a truly clean local database before retesting discovery:
+
+```powershell
+docker compose down -v --remove-orphans
+docker compose up -d --build
 ```
 
 This starts:
@@ -303,6 +317,8 @@ Important runtime files are stored under `data/`:
 - seeded demo resume: `data/resumes/demo/`
 - manual checkpoint captures: `data/manual_checkpoints/<applicationId>/`
 - semantic field cache: `data/cache/field-resolution-cache.json`
+- seniority cache: `data/cache/job-seniority-cache.json`
+- normalized LLM request cache: `data/cache/llm-semantic-cache.json`
 
 Checkpoint directories can contain screenshots, HTML captures, and extracted text for paused automation flows.
 

@@ -48,7 +48,9 @@ Current responsibilities:
 Current responsibilities:
 
 - discover jobs from configured adapters
+- classify job seniority on ingest
 - persist job sources and discovered jobs
+- apply discovery controls before persistence and before per-user scoring
 - apply hard business rules and fit scoring
 - enforce the rolling 24-hour daily target before tailoring overflow jobs
 - tailor resume content and generate short answers
@@ -105,6 +107,7 @@ Primary models:
 The LLM layer is modular by task:
 
 - `JobScorerService`
+- `JobSeniorityClassifierService`
 - `ResumeTailorService`
 - `ShortAnswerGeneratorService`
 - `ApplicationFieldResolverService`
@@ -114,6 +117,13 @@ Provider support:
 - OpenAI via `OPENAI_API_KEY`
 - Ollama via `OLLAMA_URL`
 - mock fallback when no provider is configured
+
+Normalized request caches are used where repetition is common:
+
+- seniority classification cache
+- fit scoring cache
+- resume tailoring cache
+- short-answer generation cache
 
 Hard rules remain outside the model, and structured profile facts are never delegated to the model.
 
@@ -222,6 +232,8 @@ Primary filesystem paths:
 - seeded demo resume: `data/resumes/demo/`
 - automation checkpoints: `data/manual_checkpoints/<applicationId>/`
 - semantic field cache: `data/cache/field-resolution-cache.json`
+- seniority cache: `data/cache/job-seniority-cache.json`
+- normalized LLM request cache: `data/cache/llm-semantic-cache.json`
 
 This keeps v1 simple while still preserving enough information for human-in-the-loop resume flows.
 

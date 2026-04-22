@@ -35,6 +35,8 @@ export const jobSourceKinds = [
   "extension",
 ] as const;
 
+export const jobSeniorityLevels = ["entry", "mid", "senior"] as const;
+
 export const workModes = ["remote", "hybrid", "on_site", "flexible"] as const;
 
 export const answerKinds = [
@@ -61,6 +63,7 @@ export const notificationTypes = [
 export const applicationStatusSchema = z.enum(applicationStatuses);
 export const manualActionTypeSchema = z.enum(manualActionTypes);
 export const jobSourceKindSchema = z.enum(jobSourceKinds);
+export const jobSenioritySchema = z.enum(jobSeniorityLevels);
 export const workModeSchema = z.enum(workModes);
 export const answerKindSchema = z.enum(answerKinds);
 export const promptTaskKindSchema = z.enum(promptTaskKinds);
@@ -69,6 +72,7 @@ export const notificationTypeSchema = z.enum(notificationTypes);
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type ManualActionType = z.infer<typeof manualActionTypeSchema>;
 export type JobSourceKind = z.infer<typeof jobSourceKindSchema>;
+export type JobSeniority = z.infer<typeof jobSenioritySchema>;
 export type WorkMode = z.infer<typeof workModeSchema>;
 export type AnswerKind = z.infer<typeof answerKindSchema>;
 export type PromptTaskKind = z.infer<typeof promptTaskKindSchema>;

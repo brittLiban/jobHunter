@@ -2,10 +2,10 @@ import { ReactNode } from "react";
 
 const links = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/jobs", label: "Jobs Found" },
-  { href: "/applications", label: "Applications" },
+  { href: "/jobs", label: "Discovery" },
+  { href: "/applications", label: "Review Queue" },
   { href: "/resumes", label: "Resumes" },
-  { href: "/profile", label: "Profile" },
+  { href: "/profile", label: "Settings" },
 ] as const;
 
 export function AppShell({

@@ -67,6 +67,15 @@ Before the worker can do useful work for an account:
 The first uploaded resume becomes the default automatically unless changed later.
 
 The uploaded file is used for automation uploads. The pasted base resume text is used for scoring, tailoring, and short-answer generation.
+The discovery controls in onboarding and Settings decide what the worker is allowed to keep:
+
+- enabled sources
+- target locations
+- seniority targets
+- include keywords
+- exclude keywords
+
+If a job fails those controls, it is dropped before it ever reaches the queue.
 
 ### Run the web app
 
@@ -90,6 +99,8 @@ Local mock flow behavior is intentionally more obvious than before:
 - `Open browser autofill` redirects into the local `/mock/apply/*` page
 - the browser-visible form is filled from the prepared packet
 - the mock confirmation page marks the tracker complete automatically
+
+If you want a safe local verifier where every visible autofill works end to end, keep `Mock` enabled in Settings and disable live sources until you are ready to test real ATS pages.
 
 Live supported ATS behavior is different:
 
@@ -161,6 +172,8 @@ Default source targets when environment variables are not overridden:
 - Workable: none by default
 - Mock demo feed: enabled
 
+User-level discovery controls still apply on top of those defaults. A source being enabled in the environment does not mean its jobs will be persisted for a given user.
+
 ## What `needs_user_action` Means
 
 An application should enter `needs_user_action` when automation hits friction such as:
@@ -192,8 +205,11 @@ Checkpoint artifacts are written under:
 Supported autofill behavior today:
 
 - common profile fields come from structured profile data, not the LLM
+- role seniority is classified during ingestion and stored on the job record
 - unfamiliar field labels can be resolved through the field resolver LLM
 - successful label mappings are cached in `data/cache/field-resolution-cache.json`
+- seniority classification is cached in `data/cache/job-seniority-cache.json`
+- scoring, resume tailoring, and short-answer generation use normalized request caching in `data/cache/llm-semantic-cache.json`
 - worker reruns preserve `auto_submitted`, `submitted`, and `needs_user_action` states instead of rewriting them to `prepared`
 - the worker enforces `dailyTargetVolume` over a rolling 24-hour window before generating tailored materials
 - jobs above the cap remain in `queued` so token-heavy tailoring work is deferred until the next slot opens
@@ -238,6 +254,8 @@ Current queue labels:
 - seeded demo resume: `data/resumes/demo/`
 - manual checkpoints: `data/manual_checkpoints/`
 - semantic field cache: `data/cache/field-resolution-cache.json`
+- seniority cache: `data/cache/job-seniority-cache.json`
+- normalized LLM request cache: `data/cache/llm-semantic-cache.json`
 
 ## Legacy Python Notes
 

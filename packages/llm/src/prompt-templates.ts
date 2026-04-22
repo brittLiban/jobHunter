@@ -1,6 +1,7 @@
 import type {
   GeneratedAnswer,
   FitAssessment,
+  JobSeniorityAssessment,
   JobPosting,
   StructuredProfile,
   StructuredApplicationDefaults,
@@ -20,6 +21,28 @@ export function buildJobScorerPrompt(input: {
       `Candidate profile: ${JSON.stringify(input.profile)}`,
       `Base resume: ${input.resumeText}`,
       `Job posting: ${JSON.stringify(input.job)}`,
+    ].join("\n\n"),
+  };
+}
+
+export function buildJobSeniorityPrompt(input: {
+  job: JobPosting;
+}): { systemPrompt: string; userPrompt: string } {
+  return {
+    systemPrompt: [
+      "You classify software jobs conservatively as entry, mid, or senior.",
+      "Use the actual scope and expectations in the posting, not just one buzzword.",
+      "Return JSON only and never invent facts that are not in the posting.",
+    ].join(" "),
+    userPrompt: [
+      "Classify the role seniority and explain the signal briefly.",
+      `Job: ${JSON.stringify(input.job)}`,
+      "Response schema:",
+      JSON.stringify({
+        level: "entry | mid | senior",
+        confidence: 0.0,
+        reasoning: "short explanation",
+      }, null, 2),
     ].join("\n\n"),
   };
 }
@@ -126,5 +149,13 @@ export function fallbackExplanation(fitAssessment: FitAssessment): string {
     `Decision: ${fitAssessment.decision}`,
     `Top matches: ${fitAssessment.topMatches.join(", ")}`,
     `Major gaps: ${fitAssessment.majorGaps.join(", ")}`,
+  ].join(" | ");
+}
+
+export function fallbackSeniorityExplanation(assessment: JobSeniorityAssessment) {
+  return [
+    `Level: ${assessment.level}`,
+    `Confidence: ${assessment.confidence}`,
+    `Reasoning: ${assessment.reasoning}`,
   ].join(" | ");
 }

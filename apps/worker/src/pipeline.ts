@@ -1,6 +1,7 @@
 import { applyToGreenhouseJob, applyToMockJob } from "@jobhunter/automation";
 import {
   buildStructuredApplicationDefaults,
+  evaluateDiscoveryControls,
   evaluateJobRules,
   isWithinDailyVolumeWindow,
   meetsFitThreshold,
@@ -29,6 +30,7 @@ import {
 import { buildDefaultSourceTargetsFromEnv, discoverJobsForTargets } from "@jobhunter/job-sources";
 import {
   JobScorerService,
+  JobSeniorityClassifierService,
   ResumeTailorService,
   ShortAnswerGeneratorService,
 } from "@jobhunter/llm";
@@ -52,8 +54,18 @@ const DAILY_TARGET_QUEUE_REASON =
   "Daily target volume was reached, so this application is queued until another preparation slot opens.";
 
 export async function runPipeline(options: PipelineOptions = {}) {
-  const sourceTargets = buildDefaultSourceTargetsFromEnv();
+  const users = (await getOnboardedUsersForPipeline()).filter(
+    (user) => !options.onlyUserId || user.id === options.onlyUserId,
+  );
+  const activeUsers = users.filter((user) => user.profile && user.preferences && user.resumes.length > 0);
+  const enabledSourceKinds = new Set(
+    activeUsers.flatMap((user) =>
+      (user.preferences?.sourceKinds ?? ["MOCK", "GREENHOUSE", "ASHBY", "LEVER", "WORKABLE"]).map((kind) => kind.toLowerCase()),
+    ),
+  );
+  const sourceTargets = buildDefaultSourceTargetsFromEnv().filter((target) => enabledSourceKinds.has(target.kind));
   const scorer = new JobScorerService();
+  const seniorityClassifier = new JobSeniorityClassifierService();
   const tailor = new ResumeTailorService();
   const answerGenerator = new ShortAnswerGeneratorService();
 
@@ -72,19 +84,39 @@ export async function runPipeline(options: PipelineOptions = {}) {
 
   const jobs = await discoverJobsForTargets(sourceTargets);
   const jobsBySourceKind = new Map(sourceTargets.map((target, index) => [target.kind, sourceRecords[index]]));
-
   const persistedJobs = await Promise.all(
-    jobs.map((job) =>
-      upsertDiscoveredJob({
-        sourceId: jobsBySourceKind.get(job.sourceKind)?.id ?? sourceRecords[0].id,
-        job,
-        rawPayload: job,
-      }),
-    ),
-  );
+    (await Promise.all(
+      jobs.map(async (job) => {
+        const seniorityAssessment = await seniorityClassifier.classify({ job });
+        const enrichedJob: JobPosting = {
+          ...job,
+          seniority: seniorityAssessment.level,
+          seniorityConfidence: seniorityAssessment.confidence,
+        };
 
-  const users = (await getOnboardedUsersForPipeline()).filter(
-    (user) => !options.onlyUserId || user.id === options.onlyUserId,
+        const matchesAtLeastOneUser = activeUsers.some((user) =>
+          evaluateDiscoveryControls({
+            job: enrichedJob,
+            preferences: toJobPreferences(user),
+            profile: toStructuredProfile(user),
+          }).passed,
+        );
+
+        if (!matchesAtLeastOneUser) {
+          return null;
+        }
+
+        return upsertDiscoveredJob({
+          sourceId: jobsBySourceKind.get(job.sourceKind)?.id ?? sourceRecords[0].id,
+          job: enrichedJob,
+          rawPayload: {
+            ...job,
+            seniorityAssessment,
+          },
+          seniorityAssessment,
+        });
+      }),
+    )).filter((job): job is NonNullable<typeof job> => job !== null),
   );
 
   const results = {
@@ -132,6 +164,8 @@ export async function runPipeline(options: PipelineOptions = {}) {
         company: persistedJob.company,
         title: persistedJob.title,
         location: persistedJob.locationText ?? "",
+        seniority: persistedJob.seniorityLevel ? (persistedJob.seniorityLevel.toLowerCase() as JobPosting["seniority"]) : undefined,
+        seniorityConfidence: persistedJob.seniorityConfidence ?? undefined,
         workMode: persistedJob.workMode ? (persistedJob.workMode.toLowerCase() as "remote" | "hybrid" | "on_site" | "flexible") : undefined,
         salaryMin: persistedJob.salaryMin ?? undefined,
         salaryMax: persistedJob.salaryMax ?? undefined,
@@ -141,6 +175,15 @@ export async function runPipeline(options: PipelineOptions = {}) {
         applyUrl: persistedJob.applyUrl ?? undefined,
         discoveredAt: persistedJob.discoveredAt.toISOString(),
       };
+
+      const discoveryEvaluation = evaluateDiscoveryControls({
+        job,
+        preferences,
+        profile,
+      });
+      if (!discoveryEvaluation.passed) {
+        continue;
+      }
 
       const ruleEvaluation = evaluateJobRules({
         job,
@@ -413,13 +456,20 @@ function toStructuredProfile(user: Awaited<ReturnType<typeof getOnboardedUsersFo
 }
 
 function toJobPreferences(user: Awaited<ReturnType<typeof getOnboardedUsersForPipeline>>[number]): JobPreferences {
+  const seniorityTargets = user.preferences?.seniorityTargets.map((level) => level.toLowerCase()) ?? [];
+  const sourceKinds = user.preferences?.sourceKinds.map((kind) => kind.toLowerCase()) ?? [];
+
   return {
     targetRoles: user.preferences?.targetRoles ?? ["software engineer"],
     locations: user.preferences?.targetLocations ?? ["Remote"],
     workModes: (user.preferences?.workModes.map((mode) => mode.toLowerCase()) ?? ["remote"]) as JobPreferences["workModes"],
+    seniorityTargets: (seniorityTargets.length > 0 ? seniorityTargets : ["entry", "mid"]) as JobPreferences["seniorityTargets"],
     salaryFloor: user.preferences?.salaryFloor ?? undefined,
     fitThreshold: user.preferences?.fitThreshold ?? 70,
     dailyTargetVolume: user.preferences?.dailyTargetVolume ?? 15,
+    includeKeywords: user.preferences?.includeKeywords ?? [],
+    excludeKeywords: user.preferences?.excludeKeywords ?? [],
+    sourceKinds: (sourceKinds.length > 0 ? sourceKinds : ["greenhouse", "ashby", "lever", "workable", "mock"]) as JobPreferences["sourceKinds"],
   };
 }
 
