@@ -255,6 +255,8 @@ export function serializeApplicationDetail(
     id: application.id,
     company: application.job.company,
     title: application.job.title,
+    location: application.job.locationText ?? "",
+    workMode: application.job.workMode?.toLowerCase() ?? null,
     source: application.job.source.name,
     fitScore: application.fitScoreSnapshot,
     status: toCoreApplicationStatus(application.status),

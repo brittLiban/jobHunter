@@ -48,7 +48,7 @@ export function MockAutofillClient({
   const [message, setMessage] = useState(
     autofillRequested
       ? "Opening your saved packet."
-      : "Use Open and autofill from JobHunter to land here with a prepared packet.",
+      : "Use Open browser autofill from JobHunter to land here with a prepared packet.",
   );
   const [filledCount, setFilledCount] = useState(0);
   const [resumeName, setResumeName] = useState<string | null>(null);
@@ -125,7 +125,7 @@ export function MockAutofillClient({
       <div className="app-notice app-notice-info">
         <p className="notice-title">Manual mode</p>
         <p className="notice-body">
-          This page is the raw application form. Use <strong>Open and autofill</strong> in JobHunter when you want the saved packet to fill it for you.
+          This page is the raw application form. Use <strong>Open browser autofill</strong> in JobHunter when you want the saved packet to fill it for you.
         </p>
       </div>
     );

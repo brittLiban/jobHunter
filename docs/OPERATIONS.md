@@ -16,9 +16,9 @@ Current operational defaults are intentionally conservative:
 
 - `JOBHUNTER_AUTO_APPLY_ENABLED=false`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN=true`
-- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=false`
+- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=true`
 
-That means the worker can discover, score, tailor, and prepare applications without live-submitting to external sites unless you explicitly opt in. Local mock apply pages are still allowed so the full autofill and submit loop can be verified safely in Docker.
+That means the worker can still discover, score, tailor, and prepare applications without background autonomous submission by default, while user-triggered live Greenhouse autofill remains available in the UI. Local mock apply pages are still allowed so the full visible autofill and submit loop can be verified safely in Docker.
 
 The system must pause rather than bypass:
 
@@ -78,22 +78,24 @@ Then open `http://localhost:3000`, log in, complete onboarding, upload a resume,
 
 After the worker prepares applications:
 
-- use `Open and autofill` to actually start automation
-- use `Open raw page` only when you want to inspect the employer page yourself without triggering automation
+- use `Open browser autofill` to start the visible local mock flow
+- use `Run live autofill` to start Playwright on a supported Greenhouse application
+- use `Open application only` when you want to inspect the employer page yourself without triggering automation
 - if the flow pauses, use `Resume paused step` to continue from the latest captured page
 - if the rolling 24-hour target is full, matched jobs stay queued until capacity opens instead of generating more tailored artifacts
+- use the Jobs or Applications filters to narrow the queue by search text, status, or the `Greater Seattle Area` location preset
 
 Local mock flow behavior is intentionally more obvious than before:
 
-- `Open and autofill` redirects into the local `/mock/apply/*` page
+- `Open browser autofill` redirects into the local `/mock/apply/*` page
 - the browser-visible form is filled from the prepared packet
 - the mock confirmation page marks the tracker complete automatically
 
 Live supported ATS behavior is different:
 
-- the worker performs the autofill in Playwright
+- the worker performs live Greenhouse autofill in Playwright
 - then the app opens the current step that the worker reached
-- if the flow pauses on friction, the application moves into `Needs You`
+- if the flow pauses on friction, the application moves into `Needs attention`
 
 ### Run the worker once
 
@@ -198,14 +200,15 @@ Supported autofill behavior today:
 
 The dashboard intent is:
 
-- `Open and autofill`: start automation for a supported flow
-- `Open raw page`: open the employer page without automation
+- `Open browser autofill`: start the visible local mock automation flow
+- `Run live autofill`: start live Greenhouse automation
+- `Open application only`: open the employer page without automation
 - `Resume paused step`: reopen the last page reached by automation
 
 Current queue labels:
 
-- `Ready to Open`: packet prepared, site not completed yet
-- `Needs You`: automation reached the site and paused on real friction
+- `Ready to run`: packet prepared, site not completed yet
+- `Needs attention`: automation reached the site and paused on real friction
 - `Submitted`: confirmed complete
 
 ## Important Environment Variables

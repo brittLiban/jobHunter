@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { AutofillLaunchForm } from "@/components/autofill-launch-form";
 import { StatusPill } from "@/components/status-pill";
 import { requireOnboardedUser } from "@/lib/auth";
 import {
@@ -7,14 +8,14 @@ import {
   getAutofillActionSummary,
   supportsAutofill,
 } from "@/lib/application-presentation";
+import {
+  formatLocationPreset,
+  matchesLocation,
+  matchesSearch,
+  matchesStatus,
+  readSearchParam,
+} from "@/lib/list-filters";
 import { loadApplicationsPageData } from "@/lib/page-data";
-
-const guardrails = [
-  "Auto-submit only when the form flow is simple and predictable.",
-  "Pause immediately on CAPTCHA, verification codes, upload failures, or unusual structure.",
-  "Preserve prepared answers, selected fields, and resume context for quick manual completion.",
-  "Never bypass security protections or guess unknown required answers.",
-] as const;
 
 type ApplicationsPageNotice = {
   tone: "success" | "info" | "warning";
@@ -22,100 +23,165 @@ type ApplicationsPageNotice = {
   message: string;
 };
 
+type ApplicationsPageParams = {
+  autofill?: string;
+  reason?: string;
+  submitted?: string;
+  reopened?: string;
+  q?: string;
+  status?: string;
+  locationPreset?: string;
+  locationText?: string;
+};
+
 export default async function ApplicationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    autofill?: string;
-    reason?: string;
-    submitted?: string;
-    reopened?: string;
-  }>;
+  searchParams: Promise<ApplicationsPageParams>;
 }) {
   const user = await requireOnboardedUser();
   const params = await searchParams;
   const notice = buildApplicationsNotice(params);
+  const q = readSearchParam(params.q);
+  const statusFilter = readSearchParam(params.status) || "all";
+  const locationPreset = readSearchParam(params.locationPreset) || "all";
+  const locationText = readSearchParam(params.locationText);
   const applications = await loadApplicationsPageData(user.id);
-  const submittedApplications = applications.filter((application) =>
+  const filteredApplications = applications.filter((application) =>
+    matchesSearch(
+      [application.company, application.title, application.location, application.source],
+      q,
+    )
+    && matchesStatus(application.status, statusFilter)
+    && matchesLocation({
+      location: application.location,
+      preset: locationPreset,
+      customLocation: locationText,
+    }),
+  );
+
+  const submittedApplications = filteredApplications.filter((application) =>
     application.status === "auto_submitted" || application.status === "submitted",
   );
-  const attentionApplications = applications.filter((application) => application.status === "needs_user_action");
-  const readyApplications = applications.filter((application) => application.status === "prepared");
-  const queuedApplications = applications.filter((application) => application.status === "queued");
+  const attentionApplications = filteredApplications.filter((application) => application.status === "needs_user_action");
+  const readyApplications = filteredApplications.filter((application) => application.status === "prepared");
+  const queuedApplications = filteredApplications.filter((application) => application.status === "queued");
+  const recentEvents = filteredApplications
+    .flatMap((application) =>
+      application.events.slice(0, 1).map((event) => ({
+        applicationId: application.id,
+        company: application.company,
+        title: application.title,
+        event,
+      })),
+    )
+    .slice(0, 6);
 
   return (
     <AppShell
       title="Applications"
-      description="Everything is grouped by what you need to do next: finish, open, or leave queued."
+      description="See what has already been submitted, what is ready for automation, and what still needs a human step."
       userName={user.fullName ?? user.email}
       currentPath="/applications"
     >
       {notice ? (
         <section className={`app-notice app-notice-${notice.tone}`}>
-          <p className="notice-title">{notice.title}</p>
-          <p className="notice-body">{notice.message}</p>
+          <div>
+            <p className="notice-title">{notice.title}</p>
+            <p className="notice-body">{notice.message}</p>
+          </div>
         </section>
       ) : null}
 
       <section className="app-grid app-metrics">
         <article className="app-card">
-          <span>Actually Submitted</span>
+          <span>Results</span>
+          <strong>{filteredApplications.length}</strong>
+          <p className="metric-note">filtered application queue</p>
+        </article>
+        <article className="app-card">
+          <span>Submitted</span>
           <strong>{submittedApplications.length}</strong>
         </article>
         <article className="app-card">
-          <span>Needs You</span>
+          <span>Needs attention</span>
           <strong>{attentionApplications.length}</strong>
         </article>
         <article className="app-card">
-          <span>Ready to Open</span>
+          <span>Ready to run</span>
           <strong>{readyApplications.length}</strong>
         </article>
         <article className="app-card">
-          <span>Queued Next</span>
+          <span>Queued</span>
           <strong>{queuedApplications.length}</strong>
         </article>
       </section>
 
-      <section className="app-card app-action-hero">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">How to use this queue</p>
-            <h2>Use the right link on purpose</h2>
-          </div>
+      <section className="app-card app-toolbar">
+        <div>
+          <p className="eyebrow">Queue Filters</p>
+          <h2>Slice the application queue by status or place</h2>
+          <p className="section-copy">
+            Location preset: {formatLocationPreset(locationPreset)}{locationText ? ` · Custom contains "${locationText}"` : ""}.
+          </p>
         </div>
-        <div className="action-guide-grid">
-          <div className="stack-item">
-            <p>Open and autofill</p>
-            <span>Opens the application and starts the saved packet. On mock flows, you can watch it fill in-browser.</span>
+        <form action="/applications" method="get" className="filter-bar">
+          <label className="form-field form-field-inline">
+            <span>Search</span>
+            <input name="q" defaultValue={q} placeholder="Company or role" />
+          </label>
+          <label className="form-field form-field-inline">
+            <span>Status</span>
+            <select name="status" defaultValue={statusFilter}>
+              <option value="all">All statuses</option>
+              <option value="prepared">Ready to run</option>
+              <option value="needs_user_action">Needs attention</option>
+              <option value="auto_submitted">Auto-submitted</option>
+              <option value="submitted">Submitted</option>
+              <option value="queued">Queued</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </label>
+          <label className="form-field form-field-inline">
+            <span>Location preset</span>
+            <select name="locationPreset" defaultValue={locationPreset}>
+              <option value="all">All locations</option>
+              <option value="greater_seattle">Greater Seattle Area</option>
+              <option value="seattle">Seattle only</option>
+              <option value="remote">Remote</option>
+            </select>
+          </label>
+          <label className="form-field form-field-inline">
+            <span>Custom location</span>
+            <input name="locationText" defaultValue={locationText} placeholder="Bellevue, San Francisco, etc." />
+          </label>
+          <div className="filter-actions">
+            <button type="submit" className="button button-primary">
+              Apply filters
+            </button>
+            <a href="/applications" className="button button-secondary">
+              Reset
+            </a>
           </div>
-          <div className="stack-item">
-            <p>Open raw page</p>
-            <span>Just opens the employer form. It does not trigger autofill by itself.</span>
-          </div>
-          <div className="stack-item">
-            <p>Resume paused step</p>
-            <span>Takes you back to the exact page where automation stopped and saved the current state.</span>
-          </div>
-        </div>
+        </form>
       </section>
 
-      <section className="app-three-column">
+      <section className="panel-grid-two">
         <article className="app-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Needs You</p>
-              <h2>Finish next</h2>
+              <p className="eyebrow">Needs Attention</p>
+              <h2>Human steps only</h2>
             </div>
           </div>
-          <div className="stack-list">
+          <div className="summary-list">
             {attentionApplications.length === 0 ? (
-              <div className="stack-item">
-                <p>No application is waiting on you</p>
-                <span>When a site pauses on real friction, it will show up here.</span>
+              <div className="summary-item">
+                <p>No blocked applications right now</p>
+                <span>Sites that pause on CAPTCHA, verification, or unknown required fields will show up here.</span>
               </div>
             ) : null}
-            {attentionApplications.slice(0, 4).map((application) => {
-              const state = describeTrackerState(application);
+            {attentionApplications.slice(0, 5).map((application) => {
               const targetUrl = application.applyUrl ?? application.jobUrl;
               const canAutofill = supportsAutofill(targetUrl);
               const autofill = getAutofillActionSummary({
@@ -123,32 +189,51 @@ export default async function ApplicationsPage({
                 targetUrl,
               });
               return (
-                <div key={application.id} className="stack-item">
-                  <div className="stack-item-top">
+                <div key={application.id} className="summary-item">
+                  <div className="summary-item-header">
                     <div>
                       <p>{application.company}</p>
                       <span>{application.title}</span>
                     </div>
                     <StatusPill status={application.status} />
                   </div>
-                  <span>{state.detail}</span>
-                  <div className="list-actions">
-                    {canAutofill ? (
-                      <form action={`/api/applications/${application.id}/autofill`} method="post">
-                        <button type="submit" className="button button-primary">
-                          {autofill.label}
-                        </button>
-                      </form>
+                  <div className="meta-badges">
+                    <span className="meta-badge">{application.location || "Location not listed"}</span>
+                    <span className="meta-badge">{application.source}</span>
+                    <span className="meta-badge">{autofill.modeLabel}</span>
+                    {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
+                  </div>
+                  <span>{describeTrackerState(application).detail}</span>
+                  <div className="row-links">
+                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
+                      View posting
+                    </a>
+                    {application.applyUrl ? (
+                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
+                        Open application only
+                      </a>
                     ) : null}
                     {application.lastAutomationUrl ? (
-                      <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                      <a href={application.lastAutomationUrl} className="inline-link" target="_blank" rel="noreferrer">
                         Resume paused step
                       </a>
                     ) : null}
                   </div>
-                  <p className="row-help">
-                    {canAutofill ? autofill.hint : "Open the raw page or resume the paused step to finish this application manually."}
-                  </p>
+                  <div className="list-actions">
+                    {canAutofill ? (
+                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
+                    ) : null}
+                    {application.status === "needs_user_action" && application.lastAutomationUrl ? (
+                      <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                        Resume paused step
+                      </a>
+                    ) : null}
+                    <form action={`/api/applications/${application.id}/reopen`} method="post">
+                      <button type="submit" className="button button-secondary">
+                        Requeue
+                      </button>
+                    </form>
+                  </div>
                 </div>
               );
             })}
@@ -158,18 +243,18 @@ export default async function ApplicationsPage({
         <article className="app-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Ready to Open</p>
+              <p className="eyebrow">Ready To Run</p>
               <h2>Prepared packets</h2>
             </div>
           </div>
-          <div className="stack-list">
+          <div className="summary-list">
             {readyApplications.length === 0 ? (
-              <div className="stack-item">
-                <p>No prepared packets yet</p>
-                <span>Run the worker or wait for queued jobs to move into the next available slot.</span>
+              <div className="summary-item">
+                <p>No prepared applications in this slice</p>
+                <span>Run the worker or relax the filters to see more prepared packets.</span>
               </div>
             ) : null}
-            {readyApplications.slice(0, 4).map((application) => {
+            {readyApplications.slice(0, 5).map((application) => {
               const targetUrl = application.applyUrl ?? application.jobUrl;
               const canAutofill = supportsAutofill(targetUrl);
               const autofill = getAutofillActionSummary({
@@ -177,64 +262,104 @@ export default async function ApplicationsPage({
                 targetUrl,
               });
               return (
-                <div key={application.id} className="stack-item">
-                  <div className="stack-item-top">
+                <div key={application.id} className="summary-item">
+                  <div className="summary-item-header">
                     <div>
                       <p>{application.company}</p>
                       <span>{application.title}</span>
                     </div>
                     <StatusPill status={application.status} />
                   </div>
+                  <div className="meta-badges">
+                    <span className="meta-badge">{application.location || "Location not listed"}</span>
+                    <span className="meta-badge">{application.source}</span>
+                    <span className="meta-badge">{autofill.modeLabel}</span>
+                    {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
+                  </div>
                   <span>{describeTrackerState(application).detail}</span>
-                  <div className="list-actions">
-                    {canAutofill ? (
-                      <form action={`/api/applications/${application.id}/autofill`} method="post">
-                        <button type="submit" className="button button-primary">
-                          {autofill.label}
-                        </button>
-                      </form>
-                    ) : null}
+                  <div className="row-links">
+                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
+                      View posting
+                    </a>
                     {application.applyUrl ? (
-                      <a href={application.applyUrl} className="button button-secondary" target="_blank" rel="noreferrer">
-                        Open raw page
+                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
+                        Open application only
                       </a>
                     ) : null}
                   </div>
-                  <p className="row-help">
-                    {canAutofill ? autofill.hint : "Autofill is not supported for this ATS yet, so use the raw page and saved packet manually."}
-                  </p>
+                  <div className="list-actions">
+                    {canAutofill ? (
+                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
+                    ) : null}
+                    <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
+                      <button type="submit" className="button button-secondary">
+                        Mark submitted
+                      </button>
+                    </form>
+                  </div>
                 </div>
               );
             })}
           </div>
         </article>
+      </section>
 
+      <section className="panel-grid-two">
         <article className="app-card">
           <div className="card-heading">
             <div>
               <p className="eyebrow">Submitted</p>
-              <h2>Already complete</h2>
+              <h2>Confirmed finishes</h2>
             </div>
           </div>
-          <div className="stack-list">
+          <div className="summary-list">
             {submittedApplications.length === 0 ? (
-              <div className="stack-item">
-                <p>No confirmed submissions yet</p>
-                <span>Applications move here only after a confirmed submit or a manual confirmation.</span>
+              <div className="summary-item">
+                <p>No confirmed submissions in this slice</p>
+                <span>Submitted applications only land here after a detected confirmation or manual confirmation.</span>
               </div>
             ) : null}
-            {submittedApplications.slice(0, 4).map((application) => (
-              <div key={application.id} className="stack-item">
-                <div className="stack-item-top">
+            {submittedApplications.slice(0, 5).map((application) => (
+              <div key={application.id} className="summary-item">
+                <div className="summary-item-header">
                   <div>
                     <p>{application.company}</p>
                     <span>{application.title}</span>
                   </div>
                   <StatusPill status={application.status} />
                 </div>
+                <div className="meta-badges">
+                  <span className="meta-badge">{application.location || "Location not listed"}</span>
+                  <span className="meta-badge">{application.source}</span>
+                  {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
+                </div>
                 <span>{describeTrackerState(application).detail}</span>
+                <p className="row-help">Submitted {formatTimestamp(application.submittedAt ?? application.updatedAt)}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="app-card">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">Latest Activity</p>
+              <h2>Recent lifecycle events</h2>
+            </div>
+          </div>
+          <div className="summary-list">
+            {recentEvents.length === 0 ? (
+              <div className="summary-item">
+                <p>No recent events</p>
+                <span>Activity will appear here after the worker prepares or updates applications.</span>
+              </div>
+            ) : null}
+            {recentEvents.map((item) => (
+              <div key={item.event.id} className="summary-item">
+                <p>{item.company} · {item.event.title}</p>
+                <span>{item.title}</span>
                 <p className="row-help">
-                  Submitted {formatTimestamp(application.submittedAt ?? application.updatedAt)}
+                  {item.event.detail ?? item.event.type} · {formatTimestamp(item.event.createdAt)}
                 </p>
               </div>
             ))}
@@ -245,20 +370,20 @@ export default async function ApplicationsPage({
       <section className="app-card">
         <div className="card-heading">
           <div>
-            <p className="eyebrow">All Applications</p>
-            <h2>Full tracker</h2>
+            <p className="eyebrow">Full Tracker</p>
+            <h2>All matching applications</h2>
           </div>
         </div>
         <div className="list-table">
-          {applications.length === 0 ? (
-            <div className="list-row">
+          {filteredApplications.length === 0 ? (
+            <div className="list-row list-row-rich">
               <div>
-                <p>No applications yet</p>
-                <span>The worker has not prepared any job applications.</span>
+                <p>No applications match the current filters</p>
+                <span>Clear the status or location filters to widen the queue.</span>
               </div>
             </div>
           ) : null}
-          {applications.map((application) => {
+          {filteredApplications.map((application) => {
             const state = describeTrackerState(application);
             const targetUrl = application.applyUrl ?? application.jobUrl;
             const canMarkSubmitted = !["auto_submitted", "submitted", "skipped", "rejected", "offer"].includes(application.status);
@@ -270,17 +395,24 @@ export default async function ApplicationsPage({
             });
 
             return (
-              <div key={application.id} className="list-row list-row-rich">
+              <div key={application.id} className="list-row list-row-rich job-row">
                 <div>
                   <p>{application.company}</p>
                   <span>{application.title}</span>
+                  <div className="meta-badges">
+                    <span className="meta-badge">{application.location || "Location not listed"}</span>
+                    <span className="meta-badge">{application.source}</span>
+                    <span className="meta-badge">{autofill.modeLabel}</span>
+                    {application.workMode ? <span className="meta-badge">{formatWorkMode(application.workMode)}</span> : null}
+                    {application.fitScore !== null ? <span className="meta-badge">Fit {application.fitScore}</span> : null}
+                  </div>
                   <div className="row-links">
                     <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View job
+                      View posting
                     </a>
                     {application.applyUrl ? (
                       <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open raw page
+                        Open application only
                       </a>
                     ) : null}
                     {application.lastAutomationUrl ? (
@@ -293,99 +425,50 @@ export default async function ApplicationsPage({
                 <div>
                   <p>{state.label}</p>
                   <span>{state.detail}</span>
+                  <p className="row-help">
+                    {application.generatedAnswers.length} saved answer{application.generatedAnswers.length === 1 ? "" : "s"} · Updated {formatTimestamp(application.updatedAt)}
+                  </p>
                 </div>
-                <div>
-                  <p>{application.generatedAnswers.length} saved answer{application.generatedAnswers.length === 1 ? "" : "s"}</p>
-                  <span>
-                    {application.fitScore !== null
-                      ? `Fit ${application.fitScore}/100 - ${formatTimestamp(application.updatedAt)}`
-                      : `Updated ${formatTimestamp(application.updatedAt)}`}
-                  </span>
-                </div>
-                <div className="row-status">
+                <div className="row-actions-column">
                   <StatusPill status={application.status} />
+                  <div className="list-actions">
+                    {canAutofill ? (
+                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
+                    ) : null}
+                    {application.status === "needs_user_action" && application.lastAutomationUrl ? (
+                      <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                        Resume paused step
+                      </a>
+                    ) : null}
+                    {canMarkSubmitted ? (
+                      <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
+                        <button type="submit" className="button button-secondary">
+                          Mark submitted
+                        </button>
+                      </form>
+                    ) : null}
+                    {application.status === "needs_user_action" ? (
+                      <form action={`/api/applications/${application.id}/reopen`} method="post">
+                        <button type="submit" className="button button-secondary">
+                          Requeue
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
+                  <p className="row-help">
+                    {canAutofill ? autofill.hint : "Open the employer page directly when you want to inspect the form without running automation."}
+                  </p>
                 </div>
-                <div className="list-actions">
-                  {canAutofill ? (
-                    <form action={`/api/applications/${application.id}/autofill`} method="post">
-                      <button type="submit" className="button button-primary">
-                        {autofill.label}
-                      </button>
-                    </form>
-                  ) : null}
-                  {application.status === "needs_user_action" && application.lastAutomationUrl ? (
-                    <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
-                      Resume paused step
-                    </a>
-                  ) : null}
-                  {canMarkSubmitted ? (
-                    <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
-                      <button type="submit" className="button button-secondary">
-                        Mark submitted
-                      </button>
-                    </form>
-                  ) : null}
-                  {application.status === "needs_user_action" ? (
-                    <form action={`/api/applications/${application.id}/reopen`} method="post">
-                      <button type="submit" className="button button-secondary">
-                        Requeue
-                      </button>
-                    </form>
-                  ) : null}
-                </div>
-                <p className="row-help row-help-wide">
-                  {canAutofill ? autofill.hint : "Use the raw page when you want to review the employer form without triggering autofill."}
-                </p>
               </div>
             );
           })}
         </div>
       </section>
-
-      <section className="app-two-column">
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Safety Rules</p>
-              <h2>Human-in-the-loop guardrails</h2>
-            </div>
-          </div>
-          <ul className="flat-list">
-            {guardrails.map((rule) => (
-              <li key={rule}>{rule}</li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Event History</p>
-              <h2>Latest lifecycle events</h2>
-            </div>
-          </div>
-          <div className="stack-list">
-            {applications.flatMap((application) =>
-              application.events.slice(0, 1).map((event) => (
-                <div key={event.id} className="stack-item">
-                  <p>{application.company} - {event.title}</p>
-                  <span>{event.detail ?? event.type} - {formatTimestamp(event.createdAt)}</span>
-                </div>
-              )),
-            )}
-          </div>
-        </article>
-      </section>
     </AppShell>
   );
 }
 
-function buildApplicationsNotice(params: {
-  autofill?: string;
-  reason?: string;
-  submitted?: string;
-  reopened?: string;
-}): ApplicationsPageNotice | null {
+function buildApplicationsNotice(params: ApplicationsPageParams): ApplicationsPageNotice | null {
   if (params.submitted === "1") {
     return {
       tone: "success",
@@ -422,7 +505,7 @@ function buildApplicationsNotice(params: {
     return {
       tone: "info",
       title: "Autofill paused for you",
-      message: "The worker saved the current page and moved the application into Needs You.",
+      message: "The worker saved the current page and moved the application into Needs Attention.",
     };
   }
 
@@ -435,4 +518,17 @@ function buildApplicationsNotice(params: {
   }
 
   return null;
+}
+
+function formatWorkMode(workMode: string) {
+  switch (workMode) {
+    case "remote":
+      return "Remote";
+    case "hybrid":
+      return "Hybrid";
+    case "on_site":
+      return "On-site";
+    default:
+      return "Flexible";
+  }
 }

@@ -16,6 +16,7 @@ type TrackerStateSummary = {
 type AutofillActionSummary = {
   label: string;
   hint: string;
+  modeLabel: string;
 };
 
 const manualActionLabels: Record<string, string> = {
@@ -50,12 +51,12 @@ export function describeTrackerState(input: TrackerStateInput): TrackerStateSumm
     case "needs_user_action":
       return {
         label: "Started on site, needs you",
-        detail: `${buildPauseSummary(input)} ${buildPreparedSummary(input.preparedPayload)} Use Open and continue to return to the saved step.`,
+        detail: `${buildPauseSummary(input)} ${buildPreparedSummary(input.preparedPayload)} Use Resume paused step or retry live autofill to continue from the saved point.`,
       };
     case "prepared":
       return {
         label: "Ready to open and fill",
-        detail: `${buildPreparedSummary(input.preparedPayload)} Use Open and autofill to open the application page and start the saved packet.`,
+        detail: `${buildPreparedSummary(input.preparedPayload)} Use the autofill action on this row to start the saved packet.`,
       };
     case "queued":
       return {
@@ -185,7 +186,7 @@ export function supportsAutofill(targetUrl: string | null | undefined) {
     return false;
   }
 
-  return targetUrl.includes("greenhouse") || isMockAutofillTarget(targetUrl);
+  return isGreenhouseAutofillTarget(targetUrl) || isMockAutofillTarget(targetUrl);
 }
 
 export function isMockAutofillTarget(targetUrl: string | null | undefined) {
@@ -196,31 +197,56 @@ export function isMockAutofillTarget(targetUrl: string | null | undefined) {
   return targetUrl.includes("/mock/apply/") || targetUrl.includes("/mock/jobs/");
 }
 
+export function isGreenhouseAutofillTarget(targetUrl: string | null | undefined) {
+  if (!targetUrl) {
+    return false;
+  }
+
+  return targetUrl.includes("greenhouse");
+}
+
 export function getAutofillActionSummary(input: {
   status: string;
   targetUrl: string | null | undefined;
 }): AutofillActionSummary {
   const mockTarget = isMockAutofillTarget(input.targetUrl);
+  const greenhouseTarget = isGreenhouseAutofillTarget(input.targetUrl);
 
   if (input.status === "needs_user_action") {
     return mockTarget
       ? {
-        label: "Open and continue",
-        hint: "Opens the paused application page and reuses your saved packet in the browser.",
+        label: "Resume browser autofill",
+        hint: "Opens the paused local application and continues the saved packet in your browser.",
+        modeLabel: "Browser demo",
       }
-      : {
-        label: "Run autofill and open site",
-        hint: "Runs live autofill in the worker, then opens the current step it reached on the site.",
-      };
+      : greenhouseTarget
+        ? {
+          label: "Retry live autofill",
+          hint: "Runs Playwright against the Greenhouse form, then opens the page it reached.",
+          modeLabel: "Live Greenhouse",
+        }
+        : {
+          label: "Autofill unavailable",
+          hint: "This ATS is not supported for live autofill yet.",
+          modeLabel: "Unsupported",
+        };
   }
 
   return mockTarget
     ? {
-      label: "Open and autofill",
-      hint: "Opens the application page and visibly fills it in your browser.",
+      label: "Open browser autofill",
+      hint: "Opens the local application page and visibly fills it in your browser.",
+      modeLabel: "Browser demo",
     }
-    : {
-      label: "Run autofill and open site",
-      hint: "Runs live autofill in the worker, then opens the step it reached.",
-    };
+    : greenhouseTarget
+      ? {
+        label: "Run live autofill",
+        hint: "Runs Playwright against the Greenhouse form, then opens the page it reached.",
+        modeLabel: "Live Greenhouse",
+      }
+      : {
+        label: "Autofill unavailable",
+        hint: "This ATS is not supported for live autofill yet.",
+        modeLabel: "Unsupported",
+      };
 }

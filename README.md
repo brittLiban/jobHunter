@@ -21,7 +21,8 @@ Implemented in the TypeScript stack:
 - polished marketing site at `/`
 - credential signup, login, logout, and cookie-backed sessions
 - authenticated app routes for dashboard, jobs, applications, profile, onboarding, and resumes
-- authenticated queue UI regrouped around `Ready to Open`, `Needs You`, and `Submitted`
+- authenticated operator UI regrouped around `Ready to run`, `Needs attention`, and `Submitted`
+- jobs and applications filters for search, status, and location presets including `Greater Seattle Area`
 - structured user profile and preferences persisted in Postgres via Prisma
 - resume upload persistence plus tailored `ResumeVersion` records
 - Prisma-backed dashboard, jobs, applications, and notifications pages
@@ -39,9 +40,11 @@ Implemented in the TypeScript stack:
 Validated locally on April 22, 2026:
 
 - login with a seeded real user succeeded
-- `Open and autofill` redirected into `/mock/apply/*`
+- `Open browser autofill` redirected into `/mock/apply/*`
 - the mock form filled in-browser from the prepared packet
 - the confirmation page moved the application to `auto_submitted`
+- the live queue rendered `Run live autofill` actions for supported Greenhouse applications
+- the jobs page filtered the feed down to a Greater Seattle area slice
 
 Still intentionally incomplete:
 
@@ -72,9 +75,9 @@ The product can auto-submit when the application flow is simple and reliable, bu
 
 - `JOBHUNTER_AUTO_APPLY_ENABLED=false`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN=true`
-- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=false`
+- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=true`
 
-That means a local worker run will discover, score, prepare, and track applications by default, but it will not live-submit to external sites unless you explicitly opt in. The local mock apply flow remains available so you can verify real autofill and submit behavior safely inside Docker.
+That means the worker will still discover, score, prepare, and track applications without background autonomous submission by default, but user-triggered live Greenhouse autofill is available in the UI for supported applications. The local mock apply flow remains available so you can verify browser-visible autofill safely inside Docker.
 
 The automation layer never attempts to bypass:
 
@@ -97,7 +100,7 @@ Current ingestion adapters:
 Current automated submission path:
 
 - local Mock apply pages
-- Greenhouse when external autofill is explicitly enabled
+- Greenhouse when the queue offers `Run live autofill`
 
 Everything else can still be discovered, scored, filtered, tailored, and tracked, but not all sources can be fully auto-submitted yet.
 
@@ -135,8 +138,8 @@ For a clean local test of the current product surface:
 3. Complete onboarding so the structured profile and preferences exist.
 4. Upload at least one base resume from the Resumes page.
 5. Trigger a pipeline cycle from the dashboard or run the worker from the CLI.
-6. Use `Open and autofill` from the Dashboard, Jobs, or Applications page for supported apply flows.
-7. Review any `Needs You` items and use `Resume paused step` if the site paused the automation.
+6. Use `Open browser autofill` or `Run live autofill` from the Dashboard, Jobs, or Applications page for supported apply flows.
+7. Review any `Needs attention` items and use `Resume paused step` if the site paused the automation.
 8. If your daily target is full, expect additional matched jobs to remain queued until the next slot opens.
 
 Important behavior:
@@ -146,21 +149,24 @@ Important behavior:
 - the uploaded file and the pasted base resume text are both important
 - the file is used for resume upload during automation
 - the pasted base text is what scoring, tailoring, and answer generation use
-- `Open and autofill` is the action that actually starts automation
-- `Open raw page` only opens the employer page directly and does not trigger automation by itself
-- on local mock flows, `Open and autofill` redirects into the mock application page and visibly fills the form in-browser
-- on supported live ATS flows, `Open and autofill` runs the worker-side autofill and then opens the step it reached
+- `Open browser autofill` is the action that starts the local visible mock flow
+- `Run live autofill` starts Playwright on a supported Greenhouse application
+- `Open application only` opens the employer page directly and does not trigger automation by itself
+- on local mock flows, `Open browser autofill` redirects into the mock application page and visibly fills the form in-browser
+- on supported live ATS flows, `Run live autofill` runs the worker-side automation and then opens the step it reached
+- the Jobs and Applications pages both support search, status filtering, and location presets including `Greater Seattle Area`
 
 ## Application Actions
 
 The authenticated queue now uses explicit action labels so the intent is obvious:
 
-- `Open and autofill`: start automation on a supported application flow
-- `Open raw page`: open the employer form without triggering automation
+- `Open browser autofill`: start the visible local mock autofill flow
+- `Run live autofill`: start live Playwright automation for a supported Greenhouse flow
+- `Open application only`: open the employer form without triggering automation
 - `Resume paused step`: reopen the last page reached by automation after it paused for human input
 - `Mark submitted`: manually confirm completion if you finished the application yourself
 
-The most important distinction is that `Ready to Open` means the packet is prepared in JobHunter, but the employer site is not complete yet. `Submitted` means the system or the user confirmed a real completion state.
+The most important distinction is that `Ready to run` means the packet is prepared in JobHunter, but the employer site is not complete yet. `Submitted` means the system or the user confirmed a real completion state.
 
 ## Local Development
 
@@ -249,7 +255,7 @@ The worker has also been validated locally against Docker Postgres with a seeded
 
 The demo mock jobs are wired to local `/mock/apply/*` pages so you can verify the full visible handoff:
 
-- click `Open and autofill`
+- click `Open browser autofill`
 - land on the real local mock application page
 - watch the prepared packet fill in-browser
 - submit into the local confirmation page
@@ -272,7 +278,7 @@ If you want a narrower or different set of job sources, set the corresponding `J
 The main application states a user will see are:
 
 - `queued`: the job passed the fit rules but is waiting because the rolling 24-hour target is full
-- `prepared`: shown in the UI as `Ready to Open`; tailored materials and prepared payloads are saved in JobHunter, but the employer site is not necessarily filled yet
+- `prepared`: shown in the UI as `Ready to run`; tailored materials and prepared payloads are saved in JobHunter, but the employer site is not necessarily filled yet
 - `needs_user_action`: the worker reached the live application flow, preserved state, and paused because a human was required
 - `auto_submitted`: automation detected a clear successful submission state on the employer site
 - `submitted`: the application is complete because it was confirmed automatically or manually marked submitted after user completion
@@ -304,10 +310,10 @@ Checkpoint directories can contain screenshots, HTML captures, and extracted tex
 
 Current behavior a user should know before relying on the system:
 
-- local development defaults are intentionally non-submitting
+- background autonomous worker submission is intentionally off by default
 - automation does not bypass CAPTCHA, email codes, or security checks
 - local Mock and Greenhouse are the only implemented autofill paths today
-- live external autofill remains disabled unless `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=true`
+- live Greenhouse autofill is enabled in the Docker stack by default, but other ATS flows remain unsupported
 - if no LLM provider is configured, the pipeline uses deterministic mock output rather than live model calls
 - the worker currently runs on demand rather than from a production queue or scheduler
 

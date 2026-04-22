@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { AutofillLaunchForm } from "@/components/autofill-launch-form";
 import { StatusPill } from "@/components/status-pill";
 import { requireOnboardedUser } from "@/lib/auth";
 import {
@@ -26,138 +27,132 @@ export default async function DashboardPage({
   const { overview, applications, notifications } = await loadDashboardPageData(user.id);
   const submittedApplications = applications
     .filter((application) => application.status === "auto_submitted" || application.status === "submitted")
-    .slice(0, 5);
+    .slice(0, 4);
   const attentionApplications = applications
     .filter((application) => application.status === "needs_user_action")
-    .slice(0, 5);
+    .slice(0, 4);
   const readyApplications = applications
     .filter((application) => application.status === "prepared")
-    .slice(0, 5);
+    .slice(0, 4);
   const queuedApplications = applications
     .filter((application) => application.status === "queued")
-    .slice(0, 5);
+    .slice(0, 4);
 
   return (
     <AppShell
       title="Overview"
-      description="The dashboard is organized around the next decision: done, ready to open, or waiting on you."
+      description="Run discovery, review the queue, and see immediately what was submitted versus what still needs you."
       userName={user.fullName ?? user.email}
       currentPath="/dashboard"
     >
       {notice ? (
         <section className={`app-notice app-notice-${notice.tone}`}>
-          <p className="notice-title">{notice.title}</p>
-          <p className="notice-body">{notice.message}</p>
+          <div>
+            <p className="notice-title">{notice.title}</p>
+            <p className="notice-body">{notice.message}</p>
+          </div>
         </section>
       ) : null}
 
+      <section className="app-toolbar app-card">
+        <div>
+          <p className="eyebrow">Control Center</p>
+          <h2>Operate the queue from one place</h2>
+          <p className="section-copy">
+            Local mock jobs use visible browser autofill. Live Greenhouse jobs run through Playwright and reopen the page they reached after automation finishes.
+          </p>
+        </div>
+        <div className="toolbar-actions">
+          <form action="/api/worker/run" method="post">
+            <button type="submit" className="button button-primary">
+              Run worker now
+            </button>
+          </form>
+          <a href="/jobs?locationPreset=greater_seattle" className="button button-secondary">
+            Seattle jobs
+          </a>
+          <a href="/applications" className="button button-secondary">
+            Open application queue
+          </a>
+        </div>
+      </section>
+
       <section className="app-grid app-metrics">
         <article className="app-card">
-          <span>Jobs Found</span>
+          <span>Tracked jobs</span>
           <strong>{overview.jobsFound}</strong>
         </article>
         <article className="app-card">
-          <span>Above Threshold</span>
+          <span>Above threshold</span>
           <strong>{overview.aboveThreshold}</strong>
         </article>
         <article className="app-card">
-          <span>Ready to Open</span>
+          <span>Ready to run</span>
           <strong>{overview.prepared}</strong>
         </article>
         <article className="app-card">
-          <span>Needs You</span>
+          <span>Needs attention</span>
           <strong>{overview.needsUserAction}</strong>
         </article>
         <article className="app-card">
-          <span>Actually Submitted</span>
+          <span>Submitted</span>
           <strong>{overview.submittedTotal}</strong>
         </article>
         <article className="app-card">
-          <span>Queued Next</span>
-          <strong>{overview.queued}</strong>
-        </article>
-        <article className="app-card">
-          <span>24h Target Used</span>
+          <span>24h prepared</span>
           <strong>{overview.preparedInLast24Hours}/{overview.dailyTargetVolume}</strong>
         </article>
-        <article className="app-card">
-          <span>24h Slots Left</span>
-          <strong>{overview.remainingDailyCapacity}</strong>
-        </article>
       </section>
 
-      <section className="app-card app-action-hero">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">Control Center</p>
-            <h2>Use the queue the same way every time</h2>
-          </div>
-          <div className="list-actions">
-            <form action="/api/worker/run" method="post">
-              <button type="submit" className="button button-primary">
-                Run worker now
-              </button>
-            </form>
-            <a href="/applications" className="button button-secondary">
-              Open application queue
-            </a>
-          </div>
-        </div>
-        <div className="action-guide-grid">
-          <div className="stack-item">
-            <p>1. Run worker</p>
-            <span>Discovery, scoring, tailoring, and preparation happen here.</span>
-          </div>
-          <div className="stack-item">
-            <p>2. Open and autofill</p>
-            <span>Supported mock flows open the application page and visibly fill it in-browser.</span>
-          </div>
-          <div className="stack-item">
-            <p>3. Finish only when needed</p>
-            <span>CAPTCHAs, codes, selector failures, and missing answers move the job into Needs You.</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="app-three-column">
+      <section className="panel-grid-two">
         <article className="app-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Needs You</p>
-              <h2>Finish these next</h2>
+              <p className="eyebrow">Needs Attention</p>
+              <h2>Finish these first</h2>
             </div>
+            <a href="/applications?status=needs_user_action" className="inline-link">
+              View all
+            </a>
           </div>
-          <div className="stack-list">
+          <div className="summary-list">
             {attentionApplications.length === 0 ? (
-              <div className="stack-item">
-                <p>No action required</p>
-                <span>The worker has not paused on any application flows.</span>
+              <div className="summary-item">
+                <p>No application is blocked right now</p>
+                <span>The queue is clear until a site hits friction or a manual step.</span>
               </div>
             ) : null}
             {attentionApplications.map((application) => {
-              const state = describeTrackerState(application);
+              const targetUrl = application.applyUrl ?? application.jobUrl;
+              const canAutofill = supportsAutofill(targetUrl);
               const autofill = getAutofillActionSummary({
                 status: application.status,
-                targetUrl: application.applyUrl ?? application.jobUrl,
+                targetUrl,
               });
-              const canAutofill = supportsAutofill(application.applyUrl ?? application.jobUrl);
+              const state = describeTrackerState(application);
+
               return (
-                <div key={application.id} className="stack-item">
-                  <div className="stack-item-top">
+                <div key={application.id} className="summary-item">
+                  <div className="summary-item-header">
                     <div>
                       <p>{application.company}</p>
                       <span>{application.role}</span>
                     </div>
                     <StatusPill status={application.status} />
                   </div>
+                  <div className="meta-badges">
+                    <span className="meta-badge">{application.source}</span>
+                    <span className="meta-badge">{autofill.modeLabel}</span>
+                    <span className="meta-badge">Fit {application.fitScore}</span>
+                  </div>
                   <span>{state.detail}</span>
                   <div className="row-links">
                     <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View job
+                      View posting
                     </a>
                     {application.applyUrl ? (
                       <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open raw page
+                        Open application only
                       </a>
                     ) : null}
                     {application.lastAutomationUrl ? (
@@ -168,11 +163,7 @@ export default async function DashboardPage({
                   </div>
                   <div className="list-actions">
                     {canAutofill ? (
-                      <form action={`/api/applications/${application.id}/autofill`} method="post">
-                        <button type="submit" className="button button-primary">
-                          {autofill.label}
-                        </button>
-                      </form>
+                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
                     ) : null}
                     <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
                       <button type="submit" className="button button-secondary">
@@ -180,9 +171,6 @@ export default async function DashboardPage({
                       </button>
                     </form>
                   </div>
-                  <p className="row-help">
-                    {canAutofill ? autofill.hint : "Open the raw page or resume the paused step to finish this application manually."}
-                  </p>
                 </div>
               );
             })}
@@ -192,105 +180,62 @@ export default async function DashboardPage({
         <article className="app-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Ready to Open</p>
+              <p className="eyebrow">Ready To Run</p>
               <h2>Prepared packets</h2>
             </div>
+            <a href="/applications?status=prepared" className="inline-link">
+              View all
+            </a>
           </div>
-          <div className="stack-list">
+          <div className="summary-list">
             {readyApplications.length === 0 ? (
-              <div className="stack-item">
+              <div className="summary-item">
                 <p>No prepared applications yet</p>
                 <span>Run the worker after onboarding and resume upload to prepare the next batch.</span>
               </div>
             ) : null}
             {readyApplications.map((application) => {
-              const state = describeTrackerState(application);
               const targetUrl = application.applyUrl ?? application.jobUrl;
               const canAutofill = supportsAutofill(targetUrl);
               const autofill = getAutofillActionSummary({
                 status: application.status,
                 targetUrl,
               });
+              const state = describeTrackerState(application);
+
               return (
-                <div key={application.id} className="stack-item">
-                  <div className="stack-item-top">
+                <div key={application.id} className="summary-item">
+                  <div className="summary-item-header">
                     <div>
                       <p>{application.company}</p>
                       <span>{application.role}</span>
                     </div>
                     <StatusPill status={application.status} />
                   </div>
+                  <div className="meta-badges">
+                    <span className="meta-badge">{application.source}</span>
+                    <span className="meta-badge">{autofill.modeLabel}</span>
+                    <span className="meta-badge">Fit {application.fitScore}</span>
+                  </div>
                   <span>{state.detail}</span>
                   <div className="row-links">
                     <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View job
+                      View posting
                     </a>
                     {application.applyUrl ? (
                       <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open raw page
+                        Open application only
                       </a>
                     ) : null}
                   </div>
                   <div className="list-actions">
                     {canAutofill ? (
-                      <form action={`/api/applications/${application.id}/autofill`} method="post">
-                        <button type="submit" className="button button-primary">
-                          {autofill.label}
-                        </button>
-                      </form>
+                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
                     ) : null}
                     <a href="/applications" className="button button-secondary">
-                      See full packet
+                      Open full queue
                     </a>
                   </div>
-                  <p className="row-help">
-                    {canAutofill ? autofill.hint : "Autofill is not supported for this ATS yet, so use the raw page and prepared answers manually."}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </article>
-
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Submitted</p>
-              <h2>Confirmed complete</h2>
-            </div>
-          </div>
-          <div className="stack-list">
-            {submittedApplications.length === 0 ? (
-              <div className="stack-item">
-                <p>No submitted applications yet</p>
-                <span>Applications only appear here after a confirmed submit state or a manual confirmation.</span>
-              </div>
-            ) : null}
-            {submittedApplications.map((application) => {
-              const state = describeTrackerState(application);
-              return (
-                <div key={application.id} className="stack-item">
-                  <div className="stack-item-top">
-                    <div>
-                      <p>{application.company}</p>
-                      <span>{application.role}</span>
-                    </div>
-                    <StatusPill status={application.status} />
-                  </div>
-                  <span>{state.detail}</span>
-                  <div className="row-links">
-                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View job
-                    </a>
-                    {application.applyUrl ? (
-                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open application
-                      </a>
-                    ) : null}
-                  </div>
-                  <p className="row-help">
-                    Submitted {formatTimestamp(application.submittedAt ?? application.updatedAt)}
-                  </p>
                 </div>
               );
             })}
@@ -298,66 +243,84 @@ export default async function DashboardPage({
         </article>
       </section>
 
-      <section className="app-two-column">
+      <section className="panel-grid-two">
         <article className="app-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Queued Next</p>
-              <h2>Waiting for the next daily slot</h2>
+              <p className="eyebrow">Submitted</p>
+              <h2>Recently confirmed</h2>
             </div>
+            <a href="/applications?status=submitted" className="inline-link">
+              View all
+            </a>
           </div>
-          <div className="stack-list">
-            {queuedApplications.length === 0 ? (
-              <div className="stack-item">
-                <p>No queued backlog</p>
-                <span>Jobs that pass the fit rules but exceed the rolling 24-hour target appear here.</span>
+          <div className="summary-list">
+            {submittedApplications.length === 0 ? (
+              <div className="summary-item">
+                <p>No confirmed submissions yet</p>
+                <span>Applications only move here after a real confirmation state or a manual confirmation.</span>
               </div>
             ) : null}
-            {queuedApplications.map((application) => {
-              const state = describeTrackerState(application);
-              return (
-                <div key={application.id} className="stack-item">
-                  <p>{application.company} - {application.role}</p>
-                  <span>{state.detail}</span>
-                  <div className="row-links">
-                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View job
-                    </a>
-                    {application.applyUrl ? (
-                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open raw page
-                      </a>
-                    ) : null}
+            {submittedApplications.map((application) => (
+              <div key={application.id} className="summary-item">
+                <div className="summary-item-header">
+                  <div>
+                    <p>{application.company}</p>
+                    <span>{application.role}</span>
                   </div>
+                  <StatusPill status={application.status} />
                 </div>
-              );
-            })}
+                <div className="meta-badges">
+                  <span className="meta-badge">{application.source}</span>
+                  <span className="meta-badge">Fit {application.fitScore}</span>
+                </div>
+                <span>{describeTrackerState(application).detail}</span>
+                <div className="row-links">
+                  <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
+                    View posting
+                  </a>
+                  {application.applyUrl ? (
+                    <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
+                      Open application
+                    </a>
+                  ) : null}
+                </div>
+                <p className="row-help">
+                  Submitted {formatTimestamp(application.submittedAt ?? application.updatedAt)}
+                </p>
+              </div>
+            ))}
           </div>
         </article>
 
         <article className="app-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Notifications</p>
-              <h2>Recent alerts</h2>
+              <p className="eyebrow">Queue Health</p>
+              <h2>Queued work and alerts</h2>
             </div>
           </div>
-          <div className="stack-list">
+          <div className="summary-list">
+            <div className="summary-item">
+              <p>Queued next</p>
+              <span>{queuedApplications.length === 0 ? "No backlog is waiting on a daily slot." : `${queuedApplications.length} applications are waiting for the next preparation slot.`}</span>
+              {queuedApplications.length > 0 ? (
+                <a href="/applications?status=queued" className="inline-link">
+                  Open queued applications
+                </a>
+              ) : null}
+            </div>
             {notifications.length === 0 ? (
-              <div className="stack-item">
-                <p>No notifications</p>
-                <span>The worker has not produced any alerts yet.</span>
+              <div className="summary-item">
+                <p>No recent alerts</p>
+                <span>The worker has not produced any unread notifications.</span>
               </div>
             ) : null}
-            {notifications.map((notification) => (
-              <div key={notification.id} className="stack-item">
+            {notifications.slice(0, 3).map((notification) => (
+              <div key={notification.id} className="summary-item">
                 <p>{notification.title}</p>
                 <span>{notification.message}</span>
-                <form action={`/api/notifications/${notification.id}/read`} method="post">
-                  <button type="submit" className="button button-secondary">
-                    Mark read
-                  </button>
-                </form>
+                <p className="row-help">{formatTimestamp(notification.createdAt)}</p>
               </div>
             ))}
           </div>

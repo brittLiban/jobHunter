@@ -42,7 +42,7 @@ export default async function MockApplyPage(
         <MockAutofillClient applicationId={applicationId} autofillRequested={autofillRequested} />
         <div className="app-card mock-helper-card">
           <p className="eyebrow">How this behaves</p>
-          <h2>Open and autofill should be obvious</h2>
+          <h2>Browser autofill should be obvious</h2>
           <ul className="flat-list">
             <li>JobHunter opens this page directly.</li>
             <li>It fills saved profile data, short answers, and your prepared resume packet.</li>

@@ -37,9 +37,10 @@
    - `ApplicationEvent` is recorded at worker stages
    - Notifications are created for manual-action cases
    - Resume and reopen capability exists for interrupted applications
-   - The queue UI now uses explicit action labels like `Open and autofill`, `Open raw page`, and `Resume paused step`
+   - The queue UI now uses explicit action labels like `Open browser autofill`, `Run live autofill`, `Open application only`, and `Resume paused step`
    - Local mock autofill now opens the actual mock application page, fills it in-browser, and records completion back into the tracker
-   - Dashboard and application views were regrouped around `Ready to Open`, `Needs You`, and `Submitted` so the next action is obvious
+   - Dashboard, jobs, and application views were regrouped around `Ready to run`, `Needs attention`, and `Submitted` so the next action is obvious
+   - Jobs and applications now support search, status filtering, and a `Greater Seattle Area` location preset
 
 ## Remaining Work
 

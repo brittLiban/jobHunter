@@ -27,9 +27,7 @@ export function AppShell({
         <a href="/" className="brand-link">
           jobhunter
         </a>
-        <p className="sidebar-tagline">
-          Finder + Brain + Applier + Tracker
-        </p>
+        <p className="sidebar-tagline">Finder + Brain + Applier + Tracker</p>
         <div className="sidebar-user">
           <p className="eyebrow">Signed In</p>
           <p>{userName}</p>
@@ -46,23 +44,16 @@ export function AppShell({
           ))}
         </nav>
         <div className="sidebar-card">
-          <p className="eyebrow">Open and Autofill</p>
-          <p>
-            JobHunter opens supported application pages, fills the saved packet, and submits only when the flow is simple and confidence is high.
-          </p>
-        </div>
-        <div className="sidebar-steps">
-          <div className="sidebar-step">
-            <strong>Ready to open</strong>
-            <span>The packet is prepared, but the employer page is not complete yet.</span>
-          </div>
-          <div className="sidebar-step">
-            <strong>Needs you</strong>
-            <span>The site hit friction such as a CAPTCHA, verification step, or missing required info.</span>
-          </div>
-          <div className="sidebar-step">
-            <strong>Submitted</strong>
-            <span>The application was confirmed complete in automation or after your manual finish.</span>
+          <p className="eyebrow">Autofill Modes</p>
+          <div className="sidebar-steps">
+            <div className="sidebar-step">
+              <strong>Browser demo</strong>
+              <span>Local mock apply pages open and visibly fill in your browser.</span>
+            </div>
+            <div className="sidebar-step">
+              <strong>Live Greenhouse</strong>
+              <span>Playwright runs the live form, then reopens the page it reached or records a confirmed submit.</span>
+            </div>
           </div>
         </div>
         <form action="/api/auth/logout" method="post" className="sidebar-logout">
@@ -79,10 +70,8 @@ export function AppShell({
             <p className="app-description">{description}</p>
           </div>
           <div className="app-header-panel">
-            <p className="eyebrow">Tracker rules</p>
-            <p>
-              Submitted means confirmed. Needs you means the site paused on a real blocker. Open and autofill is the action that actually opens the application flow and starts the saved packet.
-            </p>
+            <p className="eyebrow">Queue language</p>
+            <p>Ready to run means the packet is prepared. Needs attention means the site paused on a real blocker. Submitted only appears after a confirmed finish.</p>
           </div>
         </header>
         {children}

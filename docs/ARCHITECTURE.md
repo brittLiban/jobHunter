@@ -39,6 +39,7 @@ Current responsibilities:
 - onboarding and profile editing
 - resume upload handling
 - dashboard, jobs, applications, and notification surfaces
+- server-rendered queue filters for search, status, and location presets
 - prefill handoff route for browser-visible mock autofill
 - worker-trigger API route for authenticated users
 
@@ -128,6 +129,7 @@ Current automation responsibilities:
 - checkpoint artifact capture
 - fail-closed submit behavior
 - browser-visible mock autofill handoff for the local demo verifier
+- live Greenhouse autofill handoff for supported UI-triggered runs
 
 When automation cannot proceed safely, it persists prepared payloads and returns control to the tracker as `needs_user_action`.
 
