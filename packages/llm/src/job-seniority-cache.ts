@@ -16,6 +16,7 @@ type CacheStore = {
 };
 
 const cachePath = resolveDataPath("cache", "job-seniority-cache.json");
+const CACHE_VERSION = "job-seniority-v2";
 
 export async function findJobSeniorityAssessment(job: JobPosting) {
   const key = createCacheKey(job);
@@ -55,6 +56,7 @@ export async function recordJobSeniorityAssessment(job: JobPosting, assessment: 
 
 function createCacheKey(job: JobPosting) {
   const normalized = [
+    CACHE_VERSION,
     job.sourceKind,
     job.company.trim().toLowerCase(),
     job.title.trim().toLowerCase(),

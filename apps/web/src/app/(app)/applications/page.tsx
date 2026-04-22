@@ -247,7 +247,7 @@ export default async function ApplicationsPage({
                 </a>
                 {focusedApplication.lastAutomationUrl ? (
                   <a href={focusedApplication.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
-                    Resume paused step
+                    Open paused page
                   </a>
                 ) : null}
               </div>
@@ -338,6 +338,45 @@ export default async function ApplicationsPage({
                   )}
                 </div>
               </div>
+
+              {focusedApplication.automationSummary
+                && (
+                  focusedApplication.automationSummary.filledFieldCount > 0
+                  || focusedApplication.automationSummary.unknownRequiredFields.length > 0
+                  || focusedApplication.automationSummary.missingProfileFields.length > 0
+                ) ? (
+                  <div className="review-detail-grid">
+                    <div className="review-detail-panel">
+                      <p className="eyebrow">Autofill Progress</p>
+                      <p className="section-copy">
+                        Last live run autofilled {focusedApplication.automationSummary.filledFieldCount} field{focusedApplication.automationSummary.filledFieldCount === 1 ? "" : "s"} before pausing.
+                      </p>
+                      {focusedApplication.automationSummary.unknownRequiredFields.length > 0 ? (
+                        <ul className="flat-list">
+                          {focusedApplication.automationSummary.unknownRequiredFields.map((item: string) => (
+                            <li key={item}>Needs your answer: {item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="row-help">No unresolved required field mappings were left behind.</p>
+                      )}
+                    </div>
+                    <div className="review-detail-panel">
+                      <p className="eyebrow">Resume Guidance</p>
+                      {focusedApplication.automationSummary.missingProfileFields.length > 0 ? (
+                        <ul className="flat-list">
+                          {focusedApplication.automationSummary.missingProfileFields.map((item: string) => (
+                            <li key={item}>Missing profile field: {item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="section-copy">
+                          Open paused page to finish the employer form, or retry live autofill after updating your profile or resume packet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
 
               <div className="review-secondary-actions">
                 {focusedApplication.status === "needs_user_action" ? (

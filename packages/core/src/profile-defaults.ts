@@ -30,6 +30,7 @@ export type StructuredApplicationDefaults = {
   currentTitle: string;
   targetLocations: string[];
   workModes: string[];
+  messagingOptIn?: "Yes" | "No";
   whyRole?: string;
   whyFit?: string;
   anythingElse?: string;
@@ -72,6 +73,7 @@ export function buildStructuredApplicationDefaults(input: {
     currentTitle: profile.currentTitle,
     targetLocations: preferences.locations,
     workModes: preferences.workModes,
+    messagingOptIn: "No",
     whyRole: answers.get("why_role"),
     whyFit: answers.get("why_fit"),
     anythingElse: answers.get("anything_else"),

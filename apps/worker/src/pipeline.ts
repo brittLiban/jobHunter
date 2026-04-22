@@ -316,7 +316,7 @@ export async function runPipeline(options: PipelineOptions = {}) {
         preparedAt: prepared.application.preparedAt,
       });
 
-      if (!autoApplyEnabled() || !prepared.candidate.job.url.includes("greenhouse")) {
+      if (!autoApplyEnabled() || !isGreenhouseFlow(prepared.candidate.job.applyUrl ?? prepared.candidate.job.url)) {
         continue;
       }
 
@@ -494,7 +494,12 @@ function isSimpleFlow(url: string) {
 }
 
 function isGreenhouseFlow(url: string) {
-  return url.includes("greenhouse");
+  try {
+    const parsed = new URL(url);
+    return parsed.host.includes("greenhouse") || parsed.searchParams.has("gh_jid");
+  } catch {
+    return url.includes("greenhouse") || url.includes("gh_jid=");
+  }
 }
 
 function isMockFlow(url: string) {

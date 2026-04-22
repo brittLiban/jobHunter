@@ -33,9 +33,11 @@ Implemented in the TypeScript stack:
 - rules-first scoring pipeline with persisted `JobScore`, `TailoredDocument`, and `GeneratedAnswer` records
 - worker pipeline that discovers jobs, scores fit, prepares applications, tracks events, and raises notifications
 - Playwright autofill flows for Greenhouse and the local mock apply pages
+- hosted Greenhouse iframe support for company-owned job pages such as Stripe
 - LLM-assisted field resolution with semantic cache persistence for unfamiliar field labels
 - normalized LLM request caching for seniority classification, scoring, resume tailoring, and short-answer generation
 - manual-action workflow with prepared payload persistence, saved resume points, and resume/reopen support
+- paused live runs now summarize how many fields were autofilled and which required questions still need the user
 - browser-visible mock autofill handoff that opens the local apply page, fills it from the prepared packet, and records the confirmation back into the tracker
 - rolling 24-hour daily target enforcement that queues overflow jobs before tailoring work is generated
 - application-state reconciliation so worker reruns preserve submitted and paused items instead of downgrading them
@@ -48,8 +50,9 @@ Validated locally on April 22, 2026:
 - the mock form filled in-browser from the prepared packet
 - the confirmation page moved the application to `auto_submitted`
 - the live queue rendered `Run live autofill` actions for supported Greenhouse applications
+- a live Stripe-hosted Greenhouse application opened the real employer form, uploaded the resume, autofilled 20 fields, and paused only on CAPTCHA plus one unresolved prior-employment question
 - the jobs page filtered the feed down to a Greater Seattle area slice
-- a clean bootstrap account using a real local resume produced only Mock jobs targeted to Seattle or remote U.S. settings
+- a clean bootstrap account using a real local resume produced a Seattle-area Greenhouse job targeted to the current filters
 
 Still intentionally incomplete:
 
@@ -144,7 +147,7 @@ For a clean local test of the current product surface:
 4. Upload at least one base resume from the Resumes page.
 5. Trigger a pipeline cycle from the dashboard or run the worker from the CLI.
 6. Use `Open browser autofill` or `Run live autofill` from the Dashboard, Jobs, or Applications page for supported apply flows.
-7. Review any `Needs attention` items and use `Resume paused step` if the site paused the automation.
+7. Review any `Needs attention` items and use `Open paused page` if the site paused the automation.
 8. If your daily target is full, expect additional matched jobs to remain queued until the next slot opens.
 
 Important behavior:
@@ -161,6 +164,7 @@ Important behavior:
 - `Open application only` opens the employer page directly and does not trigger automation by itself
 - on local mock flows, `Open browser autofill` redirects into the mock application page and visibly fills the form in-browser
 - on supported live ATS flows, `Run live autofill` runs the worker-side automation and then opens the step it reached
+- when a live ATS run pauses, the queue now shows how many fields were autofilled and names any remaining required questions that still need the user
 - the Jobs and Applications pages both support search, status filtering, and location presets including `Greater Seattle Area`
 
 ## Application Actions
@@ -170,7 +174,7 @@ The authenticated queue now uses explicit action labels so the intent is obvious
 - `Open browser autofill`: start the visible local mock autofill flow
 - `Run live autofill`: start live Playwright automation for a supported Greenhouse flow
 - `Open application only`: open the employer form without triggering automation
-- `Resume paused step`: reopen the last page reached by automation after it paused for human input
+- `Open paused page`: reopen the last page reached by automation after it paused for human input
 - `Mark submitted`: manually confirm completion if you finished the application yourself
 
 The most important distinction is that `Ready to run` means the packet is prepared in JobHunter, but the employer site is not complete yet. `Submitted` means the system or the user confirmed a real completion state.
@@ -302,9 +306,10 @@ When an application enters `needs_user_action`, the system is expected to preser
 - the latest application URL
 - tailored resume and answer artifacts
 - prepared structured defaults
+- autofilled field counts plus any unresolved required questions
 - checkpoint screenshots or page captures when available
 
-Use the Applications page to either resume the interrupted flow or reopen the application for another worker attempt.
+Use the Applications page to either reopen the last page reached by automation or launch another worker attempt.
 If you finish an application yourself from a prepared packet or paused flow, use the `Mark submitted` action so the dashboard reflects that it is actually complete.
 Worker reruns preserve `auto_submitted`, `submitted`, and `needs_user_action` records instead of rewriting them back to `prepared`.
 The dashboard also shows how many preparation slots were used in the last 24 hours and how many remain before more jobs can leave the queued bucket.
@@ -330,6 +335,7 @@ Current behavior a user should know before relying on the system:
 - automation does not bypass CAPTCHA, email codes, or security checks
 - local Mock and Greenhouse are the only implemented autofill paths today
 - live Greenhouse autofill is enabled in the Docker stack by default, but other ATS flows remain unsupported
+- live ATS autofill runs in the worker browser session, so a reopened employer page may still require human confirmation in a fresh browser session
 - if no LLM provider is configured, the pipeline uses deterministic mock output rather than live model calls
 - the worker currently runs on demand rather than from a production queue or scheduler
 

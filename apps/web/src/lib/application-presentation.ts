@@ -3,6 +3,11 @@ type TrackerStateInput = {
   blockingReason?: string | null;
   manualActionType?: string | null;
   preparedPayload?: unknown;
+  automationSummary?: {
+    filledFieldCount?: number;
+    unknownRequiredFields?: string[];
+    missingProfileFields?: string[];
+  } | null;
   submittedAt?: string | null;
   needsUserActionAt?: string | null;
   updatedAt?: string | null;
@@ -51,7 +56,7 @@ export function describeTrackerState(input: TrackerStateInput): TrackerStateSumm
     case "needs_user_action":
       return {
         label: "Paused and needs attention",
-        detail: `${buildPauseSummary(input)} ${buildPreparedSummary(input.preparedPayload)} Use Resume paused step or retry live autofill to continue from the saved point.`,
+        detail: `${buildPauseSummary(input)} ${buildPreparedSummary(input.preparedPayload)} ${buildAutomationProgressSummary(input.automationSummary)} Use Open paused page or retry live autofill to continue from the saved point.`,
       };
     case "prepared":
       return {
@@ -79,20 +84,23 @@ export function describeTrackerState(input: TrackerStateInput): TrackerStateSumm
 function buildPauseSummary(input: TrackerStateInput) {
   const blockerLabel = input.manualActionType ? manualActionLabels[input.manualActionType] ?? input.manualActionType : null;
   const seenAt = input.needsUserActionAt ? ` on ${formatTimestamp(input.needsUserActionAt)}` : "";
+  const unresolved = input.automationSummary?.unknownRequiredFields ?? [];
+  const missingProfileFields = input.automationSummary?.missingProfileFields ?? [];
+  const unresolvedHint = buildUnresolvedHint({ unresolved, missingProfileFields });
 
   if (blockerLabel && input.blockingReason) {
-    return `Paused${seenAt} on ${blockerLabel}: ${input.blockingReason}`.trim();
+    return `Paused${seenAt} on ${blockerLabel}: ${input.blockingReason}${unresolvedHint}`.trim();
   }
 
   if (blockerLabel) {
-    return `Paused${seenAt} on ${blockerLabel}.`.trim();
+    return `Paused${seenAt} on ${blockerLabel}.${unresolvedHint}`.trim();
   }
 
   if (input.blockingReason) {
-    return `Paused${seenAt}: ${input.blockingReason}`.trim();
+    return `Paused${seenAt}: ${input.blockingReason}${unresolvedHint}`.trim();
   }
 
-  return "Paused because the flow needed a human check.";
+  return `Paused because the flow needed a human check.${unresolvedHint}`.trim();
 }
 
 function buildPreparedSummary(payload: unknown) {
@@ -117,6 +125,33 @@ function buildPreparedSummary(payload: unknown) {
   }
 
   return `Prepared in JobHunter: ${parts.join(", ")}.`;
+}
+
+function buildAutomationProgressSummary(summary: TrackerStateInput["automationSummary"]) {
+  if (!summary || !summary.filledFieldCount) {
+    return "";
+  }
+
+  return `Last live run autofilled ${summary.filledFieldCount} field${summary.filledFieldCount === 1 ? "" : "s"}.`;
+}
+
+function buildUnresolvedHint(input: {
+  unresolved: string[];
+  missingProfileFields: string[];
+}) {
+  if (input.unresolved.length > 0) {
+    const first = input.unresolved[0];
+    const extra = input.unresolved.length > 1 ? ` and ${input.unresolved.length - 1} more` : "";
+    return ` Remaining required confirmation: ${first}${extra}.`;
+  }
+
+  if (input.missingProfileFields.length > 0) {
+    const first = input.missingProfileFields[0];
+    const extra = input.missingProfileFields.length > 1 ? ` and ${input.missingProfileFields.length - 1} more` : "";
+    return ` Missing saved profile data: ${first}${extra}.`;
+  }
+
+  return "";
 }
 
 function buildQueuedSummary(payload: unknown) {
@@ -202,7 +237,12 @@ export function isGreenhouseAutofillTarget(targetUrl: string | null | undefined)
     return false;
   }
 
-  return targetUrl.includes("greenhouse");
+  try {
+    const parsed = new URL(targetUrl);
+    return parsed.host.includes("greenhouse") || parsed.searchParams.has("gh_jid");
+  } catch {
+    return targetUrl.includes("greenhouse") || targetUrl.includes("gh_jid=");
+  }
 }
 
 export function getAutofillActionSummary(input: {

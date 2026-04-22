@@ -75,6 +75,11 @@ export const applicationsResponseSchema = z.object({
       lastAutomationUrl: z.string().nullable(),
       preparedPayload: z.unknown().nullable(),
       automationSession: z.unknown().nullable(),
+      automationSummary: z.object({
+        filledFieldCount: z.number().int().nonnegative(),
+        unknownRequiredFields: z.array(z.string()),
+        missingProfileFields: z.array(z.string()),
+      }).optional(),
       simpleFlowConfirmed: z.boolean(),
       highConfidence: z.boolean(),
       preparedAt: z.string().nullable(),

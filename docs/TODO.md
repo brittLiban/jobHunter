@@ -31,6 +31,7 @@
 
 6. Playwright applier
    - Greenhouse safety logic has been ported into `packages/automation`
+   - Hosted Greenhouse employer pages such as Stripe now resolve into the embedded application iframe instead of failing on the listing shell
    - Structured profile defaults drive field mapping
    - Prepared payloads and checkpoint artifacts are saved before ambiguous exits
    - Friction paths are marked `needs_user_action`
@@ -39,11 +40,12 @@
    - `ApplicationEvent` is recorded at worker stages
    - Notifications are created for manual-action cases
    - Resume and reopen capability exists for interrupted applications
-   - The queue UI now uses explicit action labels like `Open browser autofill`, `Run live autofill`, `Open application only`, and `Resume paused step`
+   - The queue UI now uses explicit action labels like `Open browser autofill`, `Run live autofill`, `Open application only`, and `Open paused page`
    - Local mock autofill now opens the actual mock application page, fills it in-browser, and records completion back into the tracker
    - Dashboard, jobs, and application views were regrouped around `Ready to run`, `Needs attention`, and `Submitted` so the next action is obvious
    - Jobs and applications now support search, status filtering, and a `Greater Seattle Area` location preset
    - Discovery controls now gate persistence by source, seniority, location, and include/exclude keyword rules so off-target jobs do not enter the queue
+   - Needs-attention rows now show how many fields were autofilled and which required questions still need the user
 
 ## Remaining Work
 

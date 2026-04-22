@@ -136,6 +136,12 @@ export const applicationCheckpointSchema = z.object({
   preparedFields: z.record(z.string(), z.string()).default({}),
 });
 
+export const applicationAutomationSummarySchema = z.object({
+  filledFieldCount: z.number().int().nonnegative().default(0),
+  unknownRequiredFields: z.array(z.string().min(1)).default([]),
+  missingProfileFields: z.array(z.string().min(1)).default([]),
+});
+
 export const applicationRecordSchema = z.object({
   id: z.string(),
   company: z.string(),
@@ -158,6 +164,7 @@ export const applicationRecordSchema = z.object({
   needsUserActionAt: z.string().nullable().default(null),
   updatedAt: z.string(),
   generatedAnswersCount: z.number().int().nonnegative().default(0),
+  automationSummary: applicationAutomationSummarySchema.optional(),
 });
 
 export const promptTemplateSchema = z.object({
@@ -202,6 +209,7 @@ export type TailoredResumeDraft = z.infer<typeof tailoredResumeDraftSchema>;
 export type GeneratedAnswer = z.infer<typeof generatedAnswerSchema>;
 export type GeneratedAnswerSet = z.infer<typeof generatedAnswerSetSchema>;
 export type ApplicationCheckpoint = z.infer<typeof applicationCheckpointSchema>;
+export type ApplicationAutomationSummary = z.infer<typeof applicationAutomationSummarySchema>;
 export type ApplicationRecord = z.infer<typeof applicationRecordSchema>;
 export type PromptTemplate = z.infer<typeof promptTemplateSchema>;
 export type Notification = z.infer<typeof notificationSchema>;

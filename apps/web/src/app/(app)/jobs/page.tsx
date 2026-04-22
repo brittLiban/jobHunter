@@ -256,7 +256,7 @@ export default async function JobsPage({
                     ) : null}
                     {job.lastAutomationUrl ? (
                       <a href={job.lastAutomationUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Resume paused step
+                        Open paused page
                       </a>
                     ) : null}
                   </div>

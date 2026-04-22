@@ -32,6 +32,7 @@ export function buildJobSeniorityPrompt(input: {
     systemPrompt: [
       "You classify software jobs conservatively as entry, mid, or senior.",
       "Use the actual scope and expectations in the posting, not just one buzzword.",
+      "Prioritize explicit title markers like intern, new grad, L2, senior, staff, lead, or manager over vague description text.",
       "Return JSON only and never invent facts that are not in the posting.",
     ].join(" "),
     userPrompt: [
@@ -123,6 +124,7 @@ export function buildApplicationFieldResolverPrompt(input: {
           "currentTitle",
           "targetLocations",
           "workModes",
+          "messagingOptIn",
         ],
         generated_answer: ["why_role", "why_fit", "anything_else"],
         tailored_summary: ["tailoredSummary"],

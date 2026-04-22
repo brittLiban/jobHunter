@@ -60,6 +60,7 @@ const structuredFieldTargets = new Set<StructuredFieldKey>([
   "currentTitle",
   "targetLocations",
   "workModes",
+  "messagingOptIn",
 ]);
 
 const generatedAnswerTargets = new Set<GeneratedAnswerKind>([

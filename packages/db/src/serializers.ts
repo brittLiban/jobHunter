@@ -1,4 +1,5 @@
 import type {
+  ApplicationAutomationSummary,
   ApplicationRecord,
   ApplicationStatus as CoreApplicationStatus,
   DashboardSnapshot,
@@ -114,6 +115,7 @@ export function serializeApplicationRecord(
     needsUserActionAt: application.needsUserActionAt?.toISOString() ?? null,
     updatedAt: application.updatedAt.toISOString(),
     generatedAnswersCount: application.generatedAnswers?.length ?? 0,
+    automationSummary: extractAutomationSummary(application.automationSession),
   };
 }
 
@@ -302,6 +304,7 @@ export function serializeApplicationDetail(
     lastAutomationUrl: application.lastAutomationUrl,
     preparedPayload: application.preparedPayload,
     automationSession: application.automationSession,
+    automationSummary: extractAutomationSummary(application.automationSession),
     simpleFlowConfirmed: application.simpleFlowConfirmed,
     highConfidence: application.highConfidence,
     preparedAt: application.preparedAt?.toISOString() ?? null,
@@ -352,6 +355,36 @@ export function serializeGeneratedAnswerKind(kind: GeneratedAnswerKind): Generat
     default:
       return "custom";
   }
+}
+
+function extractAutomationSummary(value: Prisma.JsonValue | null | undefined): ApplicationAutomationSummary {
+  if (!isRecord(value)) {
+    return {
+      filledFieldCount: 0,
+      unknownRequiredFields: [],
+      missingProfileFields: [],
+    };
+  }
+
+  const filledFields = Array.isArray(value.filledFields)
+    ? value.filledFields.filter((item): item is string => typeof item === "string")
+    : [];
+  const unknownRequiredFields = Array.isArray(value.unknownRequiredFields)
+    ? value.unknownRequiredFields.filter((item): item is string => typeof item === "string")
+    : [];
+  const missingProfileFields = Array.isArray(value.missingProfileFields)
+    ? value.missingProfileFields.filter((item): item is string => typeof item === "string")
+    : [];
+
+  return {
+    filledFieldCount: filledFields.length,
+    unknownRequiredFields,
+    missingProfileFields,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export type UserWorkspace = User & {

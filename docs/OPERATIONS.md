@@ -90,7 +90,7 @@ After the worker prepares applications:
 - use `Open browser autofill` to start the visible local mock flow
 - use `Run live autofill` to start Playwright on a supported Greenhouse application
 - use `Open application only` when you want to inspect the employer page yourself without triggering automation
-- if the flow pauses, use `Resume paused step` to continue from the latest captured page
+- if the flow pauses, use `Open paused page` to continue from the latest captured page
 - if the rolling 24-hour target is full, matched jobs stay queued until capacity opens instead of generating more tailored artifacts
 - use the Jobs or Applications filters to narrow the queue by search text, status, or the `Greater Seattle Area` location preset
 
@@ -106,6 +106,7 @@ Live supported ATS behavior is different:
 
 - the worker performs live Greenhouse autofill in Playwright
 - then the app opens the current step that the worker reached
+- the queue records how many fields were autofilled and which required questions still need the user
 - if the flow pauses on friction, the application moves into `Needs attention`
 
 ### Run the worker once
@@ -195,6 +196,7 @@ When this happens, the system should preserve:
 The user can then resume the live application or reopen it from the app dashboard.
 If the user completes the application manually, they should mark it submitted from the Applications page so the tracker and dashboard move it out of the attention queue.
 If the dashboard shows `Saved resume point`, that link opens the most recent page the automation reached. It is the fastest way to confirm what was already filled before you continue.
+For live ATS pages, that reopened URL may still be a fresh browser session. The queue's autofill summary is the source of truth for what the worker already completed.
 
 Checkpoint artifacts are written under:
 
@@ -219,7 +221,7 @@ The dashboard intent is:
 - `Open browser autofill`: start the visible local mock automation flow
 - `Run live autofill`: start live Greenhouse automation
 - `Open application only`: open the employer page without automation
-- `Resume paused step`: reopen the last page reached by automation
+- `Open paused page`: reopen the last page reached by automation
 
 Current queue labels:
 

@@ -63,6 +63,35 @@ const SENIOR_TERMS = [
   "10+ years",
 ];
 
+const TITLE_ENTRY_PATTERNS = [
+  /\bintern\b/,
+  /\bnew grad\b/,
+  /\bentry(?:-level)?\b/,
+  /\bjunior\b/,
+  /\bgraduate\b/,
+  /\bapprentice\b/,
+  /\bassociate\b/,
+];
+
+const TITLE_MID_PATTERNS = [
+  /\bmid(?:-level)?\b/,
+  /\bintermediate\b/,
+  /\bii\b/,
+  /\bl2\b/,
+  /\blevel\s*2\b/,
+  /\bengineer\s*2\b/,
+];
+
+const TITLE_SENIOR_PATTERNS = [
+  /\bsenior\b/,
+  /\bstaff\b/,
+  /\bprincipal\b/,
+  /\blead\b/,
+  /\bmanager\b/,
+  /\bdirector\b/,
+  /\barchitect\b/,
+];
+
 export function evaluateJobRules(input: {
   job: JobPosting;
   preferences: JobPreferences;
@@ -158,20 +187,63 @@ export function inferJobSeniorityFromText(title: string, description: string): {
   confidence: number;
   reasoning: string;
 } {
-  const haystack = `${title}\n${description}`.toLowerCase();
+  const normalizedTitle = title.toLowerCase();
+  const normalizedDescription = description.toLowerCase();
+  const haystack = `${normalizedTitle}\n${normalizedDescription}`;
 
-  if (containsAny(haystack, SENIOR_TERMS)) {
+  if (matchesAnyPattern(normalizedTitle, TITLE_ENTRY_PATTERNS)) {
+    return {
+      level: "entry",
+      confidence: 0.96,
+      reasoning: "The job title contains explicit entry-level markers such as intern, new grad, junior, or entry-level.",
+    };
+  }
+
+  if (matchesAnyPattern(normalizedTitle, TITLE_MID_PATTERNS)) {
+    return {
+      level: "mid",
+      confidence: 0.88,
+      reasoning: "The job title contains explicit mid-level markers such as II, L2, engineer 2, or mid-level.",
+    };
+  }
+
+  if (matchesAnyPattern(normalizedTitle, TITLE_SENIOR_PATTERNS)) {
     return {
       level: "senior",
-      confidence: 0.88,
-      reasoning: "The title or description contains senior-level signals such as senior, staff, principal, lead, or higher experience requirements.",
+      confidence: 0.95,
+      reasoning: "The job title contains explicit senior-level markers such as senior, staff, principal, lead, or manager.",
+    };
+  }
+
+  const experienceRequirement = extractMinimumYearsRequirement(haystack);
+  if (experienceRequirement !== null) {
+    if (experienceRequirement <= 2) {
+      return {
+        level: "entry",
+        confidence: 0.78,
+        reasoning: "The posting asks for at most two years of experience, which is treated as entry-level scope.",
+      };
+    }
+
+    if (experienceRequirement <= 5) {
+      return {
+        level: "mid",
+        confidence: 0.8,
+        reasoning: "The posting asks for roughly three to five years of experience, which is treated as mid-level scope.",
+      };
+    }
+
+    return {
+      level: "senior",
+      confidence: 0.86,
+      reasoning: "The posting asks for six or more years of experience, which is treated as senior-level scope.",
     };
   }
 
   if (containsAny(haystack, ENTRY_TERMS)) {
     return {
       level: "entry",
-      confidence: 0.9,
+      confidence: 0.84,
       reasoning: "The posting includes entry-level markers such as new grad, junior, intern, or associate.",
     };
   }
@@ -179,8 +251,16 @@ export function inferJobSeniorityFromText(title: string, description: string): {
   if (containsAny(haystack, MID_TERMS)) {
     return {
       level: "mid",
-      confidence: 0.78,
+      confidence: 0.72,
       reasoning: "The posting includes intermediate signals such as mid-level, level II, or moderate experience requirements.",
+    };
+  }
+
+  if (containsAny(haystack, SENIOR_TERMS)) {
+    return {
+      level: "senior",
+      confidence: 0.7,
+      reasoning: "The posting includes senior-level language in the description even though the title is generic.",
     };
   }
 
@@ -297,4 +377,25 @@ function isGreaterSeattlePreference(value: string) {
 
 function containsAny(haystack: string, terms: readonly string[]) {
   return terms.some((term) => haystack.includes(term));
+}
+
+function matchesAnyPattern(value: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function extractMinimumYearsRequirement(value: string) {
+  const matches = [...value.matchAll(/(\d+)\s*\+?\s*(?:years|year|yrs|yr)/g)];
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const values = matches
+    .map((match) => Number.parseInt(match[1] ?? "", 10))
+    .filter((item) => Number.isFinite(item));
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  return Math.min(...values);
 }
