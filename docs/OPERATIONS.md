@@ -107,6 +107,7 @@ Live supported ATS behavior is different:
 - the worker performs live Greenhouse autofill in Playwright
 - then the app opens the current step that the worker reached
 - the queue records how many fields were autofilled and which required questions still need the user
+- unresolved required questions can be saved in the queue so the next retry reuses those answers
 - if the flow pauses on friction, the application moves into `Needs attention`
 
 ### Run the worker once

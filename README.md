@@ -38,6 +38,7 @@ Implemented in the TypeScript stack:
 - normalized LLM request caching for seniority classification, scoring, resume tailoring, and short-answer generation
 - manual-action workflow with prepared payload persistence, saved resume points, and resume/reopen support
 - paused live runs now summarize how many fields were autofilled and which required questions still need the user
+- needs-attention screens now let users save an answer for unresolved required questions and reuse it on retry
 - browser-visible mock autofill handoff that opens the local apply page, fills it from the prepared packet, and records the confirmation back into the tracker
 - rolling 24-hour daily target enforcement that queues overflow jobs before tailoring work is generated
 - application-state reconciliation so worker reruns preserve submitted and paused items instead of downgrading them
@@ -165,6 +166,7 @@ Important behavior:
 - on local mock flows, `Open browser autofill` redirects into the mock application page and visibly fills the form in-browser
 - on supported live ATS flows, `Run live autofill` runs the worker-side automation and then opens the step it reached
 - when a live ATS run pauses, the queue now shows how many fields were autofilled and names any remaining required questions that still need the user
+- unresolved required questions can be saved directly from the queue and reused automatically on the next live autofill run
 - the Jobs and Applications pages both support search, status filtering, and location presets including `Greater Seattle Area`
 
 ## Application Actions

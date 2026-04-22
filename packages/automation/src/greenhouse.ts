@@ -39,6 +39,7 @@ type ApplyToHostedJobInput = {
   entryUrl: string;
   applyUrl: string;
   defaults: StructuredApplicationDefaults;
+  fieldOverrides?: Record<string, string>;
   resumePath: string;
   generatedAnswers: GeneratedAnswer[];
   applicationId: string;
@@ -48,6 +49,7 @@ type ApplyToHostedJobInput = {
 export async function applyToGreenhouseJob(input: {
   jobUrl: string;
   defaults: StructuredApplicationDefaults;
+  fieldOverrides?: Record<string, string>;
   resumePath: string;
   generatedAnswers: GeneratedAnswer[];
   applicationId: string;
@@ -58,6 +60,7 @@ export async function applyToGreenhouseJob(input: {
     entryUrl: input.jobUrl,
     applyUrl: deriveGreenhouseApplyUrl(input.jobUrl),
     defaults: input.defaults,
+    fieldOverrides: input.fieldOverrides,
     resumePath: input.resumePath,
     generatedAnswers: input.generatedAnswers,
     applicationId: input.applicationId,
@@ -68,6 +71,7 @@ export async function applyToGreenhouseJob(input: {
 export async function applyToMockJob(input: {
   jobUrl: string;
   defaults: StructuredApplicationDefaults;
+  fieldOverrides?: Record<string, string>;
   resumePath: string;
   generatedAnswers: GeneratedAnswer[];
   applicationId: string;
@@ -78,6 +82,7 @@ export async function applyToMockJob(input: {
     entryUrl: input.jobUrl,
     applyUrl: input.jobUrl,
     defaults: input.defaults,
+    fieldOverrides: input.fieldOverrides,
     resumePath: input.resumePath,
     generatedAnswers: input.generatedAnswers,
     applicationId: input.applicationId,
@@ -91,6 +96,7 @@ async function applyToHostedJobForm(input: ApplyToHostedJobInput): Promise<Apply
     entryUrl: input.entryUrl,
     applyUrl: input.applyUrl,
     defaults: input.defaults,
+    fieldOverrides: input.fieldOverrides ?? {},
     generatedAnswers: input.generatedAnswers,
     resumePath: input.resumePath,
   };
@@ -152,6 +158,7 @@ async function applyToHostedJobForm(input: ApplyToHostedJobInput): Promise<Apply
       page,
       input.applyUrl,
       input.defaults,
+      input.fieldOverrides ?? {},
       input.generatedAnswers,
       filledFields,
       unknownRequiredFields,
@@ -162,6 +169,7 @@ async function applyToHostedJobForm(input: ApplyToHostedJobInput): Promise<Apply
       page,
       input.applyUrl,
       input.defaults,
+      input.fieldOverrides ?? {},
       input.generatedAnswers,
       filledFields,
     );
@@ -383,6 +391,13 @@ async function resolveGreenhouseFormSurface(
     }
   }
 
+  if (await openEmbeddedGreenhouseFormDirectly(page)) {
+    surface = await detectGreenhouseFormSurface(page);
+    if (surface) {
+      return surface;
+    }
+  }
+
   return null;
 }
 
@@ -537,6 +552,22 @@ async function openHostedApplyDestination(page: Page) {
   return false;
 }
 
+async function openEmbeddedGreenhouseFormDirectly(page: Page) {
+  const iframe = page.locator("iframe#grnhse_iframe, iframe[src*='job-boards.greenhouse.io/embed/job_app']").first();
+  if (!(await iframe.count())) {
+    return false;
+  }
+
+  const src = await iframe.getAttribute("src");
+  if (!src) {
+    return false;
+  }
+
+  const destination = new URL(src, page.url()).toString();
+  await navigate(page, destination);
+  return true;
+}
+
 function deriveHostedGreenhouseApplyUrl(url: string) {
   try {
     const parsed = new URL(url);
@@ -647,6 +678,7 @@ async function fillKnownRequiredFields(
   page: Page,
   applyUrl: string,
   defaults: StructuredApplicationDefaults,
+  fieldOverrides: Record<string, string>,
   generatedAnswers: GeneratedAnswer[],
   filledFields: string[],
   unknownRequiredFields: string[],
@@ -658,6 +690,15 @@ async function fillKnownRequiredFields(
   for (const prompt of requiredLabels) {
     if (filledFields.some((filled) => normalizeLabel(filled) === prompt.normalizedLabel)) {
       continue;
+    }
+
+    const overrideValue = resolveFieldOverride(fieldOverrides, prompt.displayLabel);
+    if (overrideValue) {
+      const overrideFilled = await fillPromptTarget(root, page, prompt, overrideValue).catch(() => false);
+      if (overrideFilled) {
+        filledFields.push(prompt.displayLabel);
+        continue;
+      }
     }
 
     const resolved = await resolveStructuredValueWithAssistance({
@@ -689,6 +730,7 @@ async function fillRecognizedOptionalFields(
   page: Page,
   applyUrl: string,
   defaults: StructuredApplicationDefaults,
+  fieldOverrides: Record<string, string>,
   generatedAnswers: GeneratedAnswer[],
   filledFields: string[],
 ) {
@@ -697,6 +739,15 @@ async function fillRecognizedOptionalFields(
 
   for (const prompt of prompts) {
     if (filledFields.some((filled) => normalizeLabel(filled) === prompt.normalizedLabel)) {
+      continue;
+    }
+
+    const overrideValue = resolveFieldOverride(fieldOverrides, prompt.displayLabel);
+    if (overrideValue) {
+      const overrideFilled = await fillPromptTarget(root, page, prompt, overrideValue).catch(() => false);
+      if (overrideFilled) {
+        filledFields.push(prompt.displayLabel);
+      }
       continue;
     }
 
@@ -1139,4 +1190,14 @@ function safeHostFromUrl(url: string) {
   } catch {
     return "unknown-host";
   }
+}
+
+function resolveFieldOverride(overrides: Record<string, string>, label: string) {
+  const normalizedLabel = normalizeLabel(label);
+  const candidate = overrides[normalizedLabel];
+  if (!candidate) {
+    return null;
+  }
+  const trimmed = candidate.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

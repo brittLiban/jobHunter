@@ -380,6 +380,7 @@ export async function autofillApplicationForUser(input: {
   }
 
   const structuredDefaults = extractStructuredDefaults(context);
+  const fieldOverrides = extractFieldOverrides(context);
   const generatedAnswers = context.generatedAnswers.map((answer) => ({
     kind: answer.kind.toLowerCase() as GeneratedAnswer["kind"],
     question: answer.questionText,
@@ -399,6 +400,7 @@ export async function autofillApplicationForUser(input: {
     ? await applyToMockJob({
       jobUrl: applyTarget,
       defaults: structuredDefaults,
+      fieldOverrides,
       resumePath,
       generatedAnswers,
       applicationId: context.id,
@@ -407,6 +409,7 @@ export async function autofillApplicationForUser(input: {
     : await applyToGreenhouseJob({
       jobUrl: applyTarget,
       defaults: structuredDefaults,
+      fieldOverrides,
       resumePath,
       generatedAnswers,
       applicationId: context.id,
@@ -794,6 +797,27 @@ function extractStructuredDefaults(
       answer: answer.answerText,
     })),
   });
+}
+
+function extractFieldOverrides(
+  context: NonNullable<Awaited<ReturnType<typeof getApplicationAutomationContext>>>,
+) {
+  const preparedPayload = isRecord(context.preparedPayload) ? context.preparedPayload : null;
+  const rawOverrides = isRecord(preparedPayload?.fieldOverrides) ? preparedPayload.fieldOverrides : null;
+  if (!rawOverrides) {
+    return {} as Record<string, string>;
+  }
+
+  const entries = Object.entries(rawOverrides)
+    .filter(([, value]) => typeof value === "string")
+    .map(([key, value]) => [normalizeFieldOverrideKey(key), String(value).trim()] as const)
+    .filter(([, value]) => value.length > 0);
+
+  return Object.fromEntries(entries);
+}
+
+function normalizeFieldOverrideKey(label: string) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -24,6 +24,7 @@ type ApplicationsPageNotice = {
 
 type ApplicationsPageParams = {
   autofill?: string;
+  override?: string;
   reason?: string;
   submitted?: string;
   reopened?: string;
@@ -352,11 +353,27 @@ export default async function ApplicationsPage({
                         Last live run autofilled {focusedApplication.automationSummary.filledFieldCount} field{focusedApplication.automationSummary.filledFieldCount === 1 ? "" : "s"} before pausing.
                       </p>
                       {focusedApplication.automationSummary.unknownRequiredFields.length > 0 ? (
-                        <ul className="flat-list">
+                        <div className="stack-list">
                           {focusedApplication.automationSummary.unknownRequiredFields.map((item: string) => (
-                            <li key={item}>Needs your answer: {item}</li>
+                            <form
+                              key={item}
+                              action={`/api/applications/${focusedApplication.id}/field-overrides`}
+                              method="post"
+                              className="stack-item"
+                            >
+                              <input type="hidden" name="label" value={item} />
+                              <label className="form-field">
+                                <span>Needs your answer: {item}</span>
+                                <input
+                                  name="value"
+                                  placeholder="Type the answer to reuse on retry"
+                                  defaultValue={getSavedFieldOverride(focusedApplication.preparedPayload, item)}
+                                />
+                              </label>
+                              <button type="submit" className="button button-secondary">Save answer</button>
+                            </form>
                           ))}
-                        </ul>
+                        </div>
                       ) : (
                         <p className="row-help">No unresolved required field mappings were left behind.</p>
                       )}
@@ -505,6 +522,22 @@ function capitalize(value: string) {
 }
 
 function buildApplicationsNotice(params: ApplicationsPageParams): ApplicationsPageNotice | null {
+  if (params.override === "1") {
+    return {
+      tone: "success",
+      title: "Saved for next autofill run",
+      message: "Your answer was saved to this application packet and will be reused when you retry live autofill.",
+    };
+  }
+
+  if (params.override === "blocked") {
+    return {
+      tone: "warning",
+      title: "Could not save answer",
+      message: "The question label was missing. Reopen the application and try again.",
+    };
+  }
+
   if (params.submitted === "1") {
     return {
       tone: "success",
@@ -554,4 +587,22 @@ function buildApplicationsNotice(params: ApplicationsPageParams): ApplicationsPa
   }
 
   return null;
+}
+
+function getSavedFieldOverride(payload: unknown, label: string) {
+  if (!isRecord(payload) || !isRecord(payload.fieldOverrides)) {
+    return "";
+  }
+
+  const key = normalizeFieldOverrideKey(label);
+  const value = payload.fieldOverrides[key];
+  return typeof value === "string" ? value : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeFieldOverrideKey(label: string) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }

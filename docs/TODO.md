@@ -46,6 +46,7 @@
    - Jobs and applications now support search, status filtering, and a `Greater Seattle Area` location preset
    - Discovery controls now gate persistence by source, seniority, location, and include/exclude keyword rules so off-target jobs do not enter the queue
    - Needs-attention rows now show how many fields were autofilled and which required questions still need the user
+   - Queue users can now save unresolved required answers per application and reuse them on the next live autofill retry
 
 ## Remaining Work
 

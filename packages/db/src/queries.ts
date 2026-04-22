@@ -465,6 +465,64 @@ export async function markApplicationSubmittedForUser(userId: string, applicatio
   return true;
 }
 
+export async function saveApplicationFieldOverrideForUser(input: {
+  userId: string;
+  applicationId: string;
+  label: string;
+  value: string;
+}) {
+  const application = await prisma.application.findFirst({
+    where: { id: input.applicationId, userId: input.userId },
+    select: {
+      id: true,
+      preparedPayload: true,
+    },
+  });
+  if (!application) {
+    return null;
+  }
+
+  const existingPayload = isRecord(application.preparedPayload) ? application.preparedPayload : {};
+  const existingOverrides = isRecord(existingPayload.fieldOverrides) ? existingPayload.fieldOverrides : {};
+  const normalizedLabel = normalizeFieldOverrideKey(input.label);
+  const trimmedValue = input.value.trim();
+
+  const nextOverrides = { ...existingOverrides } as Record<string, unknown>;
+  if (!trimmedValue) {
+    delete nextOverrides[normalizedLabel];
+  } else {
+    nextOverrides[normalizedLabel] = trimmedValue;
+  }
+
+  const nextPreparedPayload = {
+    ...existingPayload,
+    fieldOverrides: nextOverrides,
+  };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.application.update({
+      where: { id: input.applicationId },
+      data: {
+        preparedPayload: nextPreparedPayload as never,
+      },
+    });
+
+    await tx.applicationEvent.create({
+      data: {
+        applicationId: input.applicationId,
+        type: "NOTE",
+        actor: "user",
+        title: trimmedValue ? "Autofill answer saved" : "Autofill answer cleared",
+        detail: trimmedValue
+          ? `Saved answer for required question: ${input.label}`
+          : `Cleared saved answer for question: ${input.label}`,
+      },
+    });
+  });
+
+  return true;
+}
+
 export async function finalizeMockApplicationSubmissionForUser(input: {
   userId: string;
   applicationId: string;
@@ -619,4 +677,12 @@ function toPrismaJobSourceKind(kind: JobPreferences["sourceKinds"][number]) {
     default:
       return JobSourceKind.EXTENSION;
   }
+}
+
+function normalizeFieldOverrideKey(label: string) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
