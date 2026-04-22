@@ -383,6 +383,7 @@ export async function autofillApplicationForUser(input: {
     ok: true as const,
     outcome,
     source: result.source,
+    redirectUrl: result.currentUrl ?? result.applyUrl ?? applyTarget,
   };
 }
 

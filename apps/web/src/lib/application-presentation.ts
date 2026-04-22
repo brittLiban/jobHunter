@@ -13,6 +13,11 @@ type TrackerStateSummary = {
   detail: string;
 };
 
+type AutofillActionSummary = {
+  label: string;
+  hint: string;
+};
+
 const manualActionLabels: Record<string, string> = {
   captcha: "CAPTCHA",
   email_verification_code: "email verification",
@@ -45,12 +50,12 @@ export function describeTrackerState(input: TrackerStateInput): TrackerStateSumm
     case "needs_user_action":
       return {
         label: "Started on site, needs you",
-        detail: `${buildPauseSummary(input)} ${buildPreparedSummary(input.preparedPayload)} Resume from the saved page to see what was filled and finish quickly.`,
+        detail: `${buildPauseSummary(input)} ${buildPreparedSummary(input.preparedPayload)} Use Open and continue to return to the saved step.`,
       };
     case "prepared":
       return {
-        label: "Prepared, not filled on site yet",
-        detail: `${buildPreparedSummary(input.preparedPayload)} The packet is ready for Autofill now or a guided manual finish.`,
+        label: "Ready to open and fill",
+        detail: `${buildPreparedSummary(input.preparedPayload)} Use Open and autofill to open the application page and start the saved packet.`,
       };
     case "queued":
       return {
@@ -180,5 +185,42 @@ export function supportsAutofill(targetUrl: string | null | undefined) {
     return false;
   }
 
-  return targetUrl.includes("greenhouse") || targetUrl.includes("/mock/apply/") || targetUrl.includes("/mock/jobs/");
+  return targetUrl.includes("greenhouse") || isMockAutofillTarget(targetUrl);
+}
+
+export function isMockAutofillTarget(targetUrl: string | null | undefined) {
+  if (!targetUrl) {
+    return false;
+  }
+
+  return targetUrl.includes("/mock/apply/") || targetUrl.includes("/mock/jobs/");
+}
+
+export function getAutofillActionSummary(input: {
+  status: string;
+  targetUrl: string | null | undefined;
+}): AutofillActionSummary {
+  const mockTarget = isMockAutofillTarget(input.targetUrl);
+
+  if (input.status === "needs_user_action") {
+    return mockTarget
+      ? {
+        label: "Open and continue",
+        hint: "Opens the paused application page and reuses your saved packet in the browser.",
+      }
+      : {
+        label: "Run autofill and open site",
+        hint: "Runs live autofill in the worker, then opens the current step it reached on the site.",
+      };
+  }
+
+  return mockTarget
+    ? {
+      label: "Open and autofill",
+      hint: "Opens the application page and visibly fills it in your browser.",
+    }
+    : {
+      label: "Run autofill and open site",
+      hint: "Runs live autofill in the worker, then opens the step it reached.",
+    };
 }

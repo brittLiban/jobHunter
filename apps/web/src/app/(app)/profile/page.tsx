@@ -15,6 +15,7 @@ export default async function ProfilePage() {
       title="Profile"
       description="Structured profile data powers repeatable form fill, rule enforcement, and trustworthy automation without asking the LLM to guess facts."
       userName={user.fullName ?? user.email}
+      currentPath="/profile"
     >
       <section className="app-card">
         <div className="card-heading">

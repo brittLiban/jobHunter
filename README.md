@@ -21,6 +21,7 @@ Implemented in the TypeScript stack:
 - polished marketing site at `/`
 - credential signup, login, logout, and cookie-backed sessions
 - authenticated app routes for dashboard, jobs, applications, profile, onboarding, and resumes
+- authenticated queue UI regrouped around `Ready to Open`, `Needs You`, and `Submitted`
 - structured user profile and preferences persisted in Postgres via Prisma
 - resume upload persistence plus tailored `ResumeVersion` records
 - Prisma-backed dashboard, jobs, applications, and notifications pages
@@ -30,9 +31,17 @@ Implemented in the TypeScript stack:
 - Playwright autofill flows for Greenhouse and the local mock apply pages
 - LLM-assisted field resolution with semantic cache persistence for unfamiliar field labels
 - manual-action workflow with prepared payload persistence, saved resume points, and resume/reopen support
+- browser-visible mock autofill handoff that opens the local apply page, fills it from the prepared packet, and records the confirmation back into the tracker
 - rolling 24-hour daily target enforcement that queues overflow jobs before tailoring work is generated
 - application-state reconciliation so worker reruns preserve submitted and paused items instead of downgrading them
 - Dockerized `web`, `worker`, `migrate`, and `postgres` services
+
+Validated locally on April 22, 2026:
+
+- login with a seeded real user succeeded
+- `Open and autofill` redirected into `/mock/apply/*`
+- the mock form filled in-browser from the prepared packet
+- the confirmation page moved the application to `auto_submitted`
 
 Still intentionally incomplete:
 
@@ -126,8 +135,8 @@ For a clean local test of the current product surface:
 3. Complete onboarding so the structured profile and preferences exist.
 4. Upload at least one base resume from the Resumes page.
 5. Trigger a pipeline cycle from the dashboard or run the worker from the CLI.
-6. Use `Autofill now` from the Dashboard or Applications page for supported apply flows.
-7. Review any `needs_user_action` items and resume from the saved page if the site paused the automation.
+6. Use `Open and autofill` from the Dashboard, Jobs, or Applications page for supported apply flows.
+7. Review any `Needs You` items and use `Resume paused step` if the site paused the automation.
 8. If your daily target is full, expect additional matched jobs to remain queued until the next slot opens.
 
 Important behavior:
@@ -137,8 +146,21 @@ Important behavior:
 - the uploaded file and the pasted base resume text are both important
 - the file is used for resume upload during automation
 - the pasted base text is what scoring, tailoring, and answer generation use
-- `Autofill now` is the action that actually launches Playwright and fills the employer page
-- `Apply page` only opens the employer page directly and does not trigger automation by itself
+- `Open and autofill` is the action that actually starts automation
+- `Open raw page` only opens the employer page directly and does not trigger automation by itself
+- on local mock flows, `Open and autofill` redirects into the mock application page and visibly fills the form in-browser
+- on supported live ATS flows, `Open and autofill` runs the worker-side autofill and then opens the step it reached
+
+## Application Actions
+
+The authenticated queue now uses explicit action labels so the intent is obvious:
+
+- `Open and autofill`: start automation on a supported application flow
+- `Open raw page`: open the employer form without triggering automation
+- `Resume paused step`: reopen the last page reached by automation after it paused for human input
+- `Mark submitted`: manually confirm completion if you finished the application yourself
+
+The most important distinction is that `Ready to Open` means the packet is prepared in JobHunter, but the employer site is not complete yet. `Submitted` means the system or the user confirmed a real completion state.
 
 ## Local Development
 
@@ -148,6 +170,12 @@ Start the full local stack:
 
 ```powershell
 docker compose up --build
+```
+
+If the stack is already running and you want the latest code live after local changes:
+
+```powershell
+docker compose up -d --build web worker
 ```
 
 This starts:
@@ -219,7 +247,13 @@ Demo credentials:
 
 The worker has also been validated locally against Docker Postgres with a seeded onboarded user. In the current configuration it discovers jobs, scores fit, prepares applications, and records tracker state without performing live submission by default.
 
-The demo mock jobs are wired to local `/mock/apply/*` pages so you can verify actual field fill, resume upload, confirmation detection, and dashboard status changes without touching a real employer site.
+The demo mock jobs are wired to local `/mock/apply/*` pages so you can verify the full visible handoff:
+
+- click `Open and autofill`
+- land on the real local mock application page
+- watch the prepared packet fill in-browser
+- submit into the local confirmation page
+- see the tracker move the application into `Auto-submitted`
 
 ## Default Discovery Targets
 
@@ -238,7 +272,7 @@ If you want a narrower or different set of job sources, set the corresponding `J
 The main application states a user will see are:
 
 - `queued`: the job passed the fit rules but is waiting because the rolling 24-hour target is full
-- `prepared`: tailored materials and prepared payloads are saved in JobHunter, but the employer site is not necessarily filled yet
+- `prepared`: shown in the UI as `Ready to Open`; tailored materials and prepared payloads are saved in JobHunter, but the employer site is not necessarily filled yet
 - `needs_user_action`: the worker reached the live application flow, preserved state, and paused because a human was required
 - `auto_submitted`: automation detected a clear successful submission state on the employer site
 - `submitted`: the application is complete because it was confirmed automatically or manually marked submitted after user completion

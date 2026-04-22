@@ -11,6 +11,7 @@ export default async function ResumesPage() {
       title="Resumes"
       description="Upload base resumes, mark a default version, and track tailored resume versions generated for specific applications."
       userName={user.fullName ?? user.email}
+      currentPath="/resumes"
     >
       <section className="app-two-column">
         <article className="app-card">

@@ -78,10 +78,22 @@ Then open `http://localhost:3000`, log in, complete onboarding, upload a resume,
 
 After the worker prepares applications:
 
-- use `Autofill now` to launch Playwright and actually fill the supported apply page
-- use `Apply page` only when you want to inspect the employer page yourself without triggering automation
-- if the flow pauses, use `Saved resume point` or `Resume where paused` to continue from the latest captured page
+- use `Open and autofill` to actually start automation
+- use `Open raw page` only when you want to inspect the employer page yourself without triggering automation
+- if the flow pauses, use `Resume paused step` to continue from the latest captured page
 - if the rolling 24-hour target is full, matched jobs stay queued until capacity opens instead of generating more tailored artifacts
+
+Local mock flow behavior is intentionally more obvious than before:
+
+- `Open and autofill` redirects into the local `/mock/apply/*` page
+- the browser-visible form is filled from the prepared packet
+- the mock confirmation page marks the tracker complete automatically
+
+Live supported ATS behavior is different:
+
+- the worker performs the autofill in Playwright
+- then the app opens the current step that the worker reached
+- if the flow pauses on friction, the application moves into `Needs You`
 
 ### Run the worker once
 
@@ -109,6 +121,12 @@ Run the full stack:
 
 ```powershell
 docker compose up --build
+```
+
+If the compose stack is already running and you want the current workspace changes to take effect, rebuild and recycle the app services:
+
+```powershell
+docker compose up -d --build web worker
 ```
 
 Services:
@@ -180,9 +198,15 @@ Supported autofill behavior today:
 
 The dashboard intent is:
 
-- `Autofill now`: run browser automation
-- `Apply page`: open the employer page without automation
-- `Saved resume point` or `Resume where paused`: reopen the last page reached by automation
+- `Open and autofill`: start automation for a supported flow
+- `Open raw page`: open the employer page without automation
+- `Resume paused step`: reopen the last page reached by automation
+
+Current queue labels:
+
+- `Ready to Open`: packet prepared, site not completed yet
+- `Needs You`: automation reached the site and paused on real friction
+- `Submitted`: confirmed complete
 
 ## Important Environment Variables
 

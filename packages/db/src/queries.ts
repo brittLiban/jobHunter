@@ -462,6 +462,99 @@ export async function markApplicationSubmittedForUser(userId: string, applicatio
   return true;
 }
 
+export async function finalizeMockApplicationSubmissionForUser(input: {
+  userId: string;
+  applicationId: string;
+  currentUrl: string;
+  submissionMode: "browser_autofill" | "manual";
+}) {
+  const application = await prisma.application.findFirst({
+    where: { id: input.applicationId, userId: input.userId },
+    select: {
+      id: true,
+      status: true,
+      submittedAt: true,
+      autoSubmittedAt: true,
+    },
+  });
+
+  if (!application) {
+    return null;
+  }
+
+  const alreadyFinal = ["AUTO_SUBMITTED", "SUBMITTED"].includes(application.status);
+  const now = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    if (alreadyFinal) {
+      await tx.application.update({
+        where: { id: input.applicationId },
+        data: {
+          lastAutomationUrl: input.currentUrl,
+          blockingReason: null,
+          manualActionType: null,
+          needsUserActionAt: null,
+        },
+      });
+    } else if (input.submissionMode === "browser_autofill") {
+      await tx.application.update({
+        where: { id: input.applicationId },
+        data: {
+          status: "AUTO_SUBMITTED",
+          lastAutomationUrl: input.currentUrl,
+          blockingReason: null,
+          manualActionType: null,
+          needsUserActionAt: null,
+          autoSubmittedAt: application.autoSubmittedAt ?? now,
+          submittedAt: application.submittedAt ?? now,
+        },
+      });
+    } else {
+      await tx.application.update({
+        where: { id: input.applicationId },
+        data: {
+          status: "SUBMITTED",
+          lastAutomationUrl: input.currentUrl,
+          blockingReason: null,
+          manualActionType: null,
+          needsUserActionAt: null,
+          submittedAt: application.submittedAt ?? now,
+        },
+      });
+    }
+
+    if (!alreadyFinal) {
+      await tx.applicationEvent.create({
+        data: {
+          applicationId: input.applicationId,
+          type: input.submissionMode === "browser_autofill" ? "AUTO_SUBMITTED" : "SUBMITTED",
+          actor: input.submissionMode === "browser_autofill" ? "system" : "user",
+          title: input.submissionMode === "browser_autofill"
+            ? "Mock application auto-submitted"
+            : "Mock application submitted",
+          detail: input.submissionMode === "browser_autofill"
+            ? "The local mock application was filled and submitted in the browser."
+            : "The local mock application was completed manually in the browser.",
+        },
+      });
+    }
+
+    await tx.notification.updateMany({
+      where: {
+        userId: input.userId,
+        applicationId: input.applicationId,
+        status: "UNREAD",
+      },
+      data: {
+        status: "READ",
+        readAt: now,
+      },
+    });
+  });
+
+  return true;
+}
+
 export async function markNotificationRead(userId: string, notificationId: string) {
   const notification = await prisma.notification.findFirst({
     where: { id: notificationId, userId },
