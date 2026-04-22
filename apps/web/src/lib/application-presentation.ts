@@ -50,7 +50,7 @@ export function describeTrackerState(input: TrackerStateInput): TrackerStateSumm
     case "prepared":
       return {
         label: "Prepared, not filled on site yet",
-        detail: `${buildPreparedSummary(input.preparedPayload)} The packet is ready for the next automation run or a guided manual finish.`,
+        detail: `${buildPreparedSummary(input.preparedPayload)} The packet is ready for Autofill now or a guided manual finish.`,
       };
     case "queued":
       return {
@@ -165,4 +165,12 @@ function hasMeaningfulValue(value: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function supportsAutofill(targetUrl: string | null | undefined) {
+  if (!targetUrl) {
+    return false;
+  }
+
+  return targetUrl.includes("greenhouse") || targetUrl.includes("/mock/apply/") || targetUrl.includes("/mock/jobs/");
 }

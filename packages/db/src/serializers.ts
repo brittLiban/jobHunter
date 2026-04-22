@@ -118,6 +118,7 @@ export function serializeJobPosting(input: {
   score?: JobScore | null;
   application?: Application | null;
 }): JobPosting & {
+  applicationId: string | null;
   fitScore: number | null;
   status: string;
   decision: "apply" | "skip" | null;
@@ -148,6 +149,7 @@ export function serializeJobPosting(input: {
     url: job.canonicalUrl,
     applyUrl: job.applyUrl ?? undefined,
     discoveredAt: job.discoveredAt.toISOString(),
+    applicationId: application?.id ?? null,
     fitScore: score?.fitScore ?? null,
     status: application?.status.toLowerCase() ?? "discovered",
     decision: score ? (score.decision ? "apply" : "skip") : null,

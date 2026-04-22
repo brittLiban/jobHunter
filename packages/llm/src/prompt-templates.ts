@@ -1,7 +1,9 @@
 import type {
+  GeneratedAnswer,
   FitAssessment,
   JobPosting,
   StructuredProfile,
+  StructuredApplicationDefaults,
   TailoredResumeDraft,
 } from "@jobhunter/core";
 
@@ -50,6 +52,70 @@ export function buildShortAnswerPrompt(input: {
       `Candidate profile: ${JSON.stringify(input.profile)}`,
       `Tailored resume: ${JSON.stringify(input.tailoredResume)}`,
       `Job: ${JSON.stringify(input.job)}`,
+    ].join("\n\n"),
+  };
+}
+
+export function buildApplicationFieldResolverPrompt(input: {
+  sourceHost: string;
+  fieldLabel: string;
+  defaults: StructuredApplicationDefaults;
+  generatedAnswers: GeneratedAnswer[];
+}): { systemPrompt: string; userPrompt: string } {
+  return {
+    systemPrompt: [
+      "You map job application field labels to existing prepared candidate data.",
+      "Return JSON only.",
+      "Never invent user data.",
+      "Choose the single best target from the allowed list or return none.",
+      "Prefer structured profile fields over free-text answers when both could work.",
+    ].join(" "),
+    userPrompt: [
+      `Application host: ${input.sourceHost}`,
+      `Field label: ${input.fieldLabel}`,
+      "Allowed targets:",
+      JSON.stringify({
+        structured_field: [
+          "fullLegalName",
+          "firstName",
+          "lastName",
+          "email",
+          "phone",
+          "city",
+          "state",
+          "country",
+          "linkedinUrl",
+          "githubUrl",
+          "portfolioUrl",
+          "workAuthorization",
+          "usCitizenStatus",
+          "requiresVisaSponsorship",
+          "veteranStatus",
+          "disabilityStatus",
+          "school",
+          "degree",
+          "graduationDate",
+          "yearsOfExperience",
+          "currentCompany",
+          "currentTitle",
+          "targetLocations",
+          "workModes",
+        ],
+        generated_answer: ["why_role", "why_fit", "anything_else"],
+        tailored_summary: ["tailoredSummary"],
+        none: ["none"],
+      }, null, 2),
+      "Prepared structured defaults:",
+      JSON.stringify(input.defaults),
+      "Prepared generated answers:",
+      JSON.stringify(input.generatedAnswers),
+      "Response schema:",
+      JSON.stringify({
+        kind: "structured_field | generated_answer | tailored_summary | none",
+        target: "allowed target string or none",
+        confidence: 0.0,
+        reasoning: "short explanation",
+      }, null, 2),
     ].join("\n\n"),
   };
 }

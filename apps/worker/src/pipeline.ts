@@ -1,10 +1,9 @@
-import { resolve } from "node:path";
-
-import { applyToGreenhouseJob } from "@jobhunter/automation";
+import { applyToGreenhouseJob, applyToMockJob } from "@jobhunter/automation";
 import {
   buildStructuredApplicationDefaults,
   evaluateJobRules,
   meetsFitThreshold,
+  resolveDataPath,
   type GeneratedAnswer,
   type JobPreferences,
   type StructuredProfile,
@@ -13,7 +12,11 @@ import {
   createNotification,
   ensureApplicationRecord,
   ensureJobSource,
+  getApplicationAutomationContext,
+  getExistingApplicationsForUser,
   getOnboardedUsersForPipeline,
+  markOlderNotificationsReadForApplication,
+  reconcileApplicationStateConsistency,
   recordApplicationEvent,
   replaceTailoredArtifacts,
   updateApplicationAfterAutomation,
@@ -85,7 +88,10 @@ export async function runPipeline(options: PipelineOptions = {}) {
     const profile = toStructuredProfile(user);
     const preferences = toJobPreferences(user);
     const resume = user.resumes[0];
-    const resumePath = resolve("data", resume.storageKey);
+    const resumePath = resolveDataPath(resume.storageKey);
+    await reconcileApplicationStateConsistency(user.id);
+    const existingApplications = await getExistingApplicationsForUser(user.id);
+    const existingApplicationsByJobId = new Map(existingApplications.map((application) => [application.jobId, application]));
 
     for (const persistedJob of persistedJobs) {
       const sourceRecord = sourceRecords.find((source) => source.id === persistedJob.sourceId);
@@ -136,6 +142,10 @@ export async function runPipeline(options: PipelineOptions = {}) {
           reasons: ruleEvaluation.reasons,
         },
       });
+      const existingApplication = existingApplicationsByJobId.get(persistedJob.id);
+      if (existingApplication && shouldPreserveApplicationStatus(existingApplication.status)) {
+        continue;
+      }
 
       const thresholdPassed = ruleEvaluation.passed && meetsFitThreshold(score.fitScore, preferences.fitThreshold);
       if (!thresholdPassed || score.decision !== "apply") {
@@ -154,6 +164,10 @@ export async function runPipeline(options: PipelineOptions = {}) {
             score,
             ruleEvaluation,
           },
+          automationSession: null,
+          autoSubmittedAt: null,
+          submittedAt: null,
+          needsUserActionAt: null,
         });
         await recordApplicationEvent({
           applicationId: application.id,
@@ -166,6 +180,7 @@ export async function runPipeline(options: PipelineOptions = {}) {
           },
         });
         results.skippedApplications += 1;
+        existingApplicationsByJobId.set(persistedJob.id, application);
         continue;
       }
 
@@ -203,7 +218,11 @@ export async function runPipeline(options: PipelineOptions = {}) {
           tailoredResume,
           resumePath,
         },
+        automationSession: null,
         preparedAt: new Date(),
+        autoSubmittedAt: null,
+        submittedAt: null,
+        needsUserActionAt: null,
       });
 
       await replaceTailoredArtifacts({
@@ -227,6 +246,7 @@ export async function runPipeline(options: PipelineOptions = {}) {
         },
       });
       results.preparedApplications += 1;
+      existingApplicationsByJobId.set(persistedJob.id, application);
 
       if (!autoApplyEnabled() || !job.url.includes("greenhouse")) {
         continue;
@@ -240,72 +260,105 @@ export async function runPipeline(options: PipelineOptions = {}) {
         applicationId: application.id,
         dryRun: autoApplyDryRun(),
       });
-
-      if (result.success && result.submitted) {
-        await updateApplicationAfterAutomation({
-          applicationId: application.id,
-          status: "AUTO_SUBMITTED",
-          lastAutomationUrl: result.currentUrl ?? result.applyUrl,
-          autoSubmittedAt: new Date(),
-          submittedAt: new Date(),
-          automationSession: {
-            confirmationText: result.confirmationText,
-            preparedPayload: result.preparedPayload,
-          },
-        });
-        await recordApplicationEvent({
-          applicationId: application.id,
-          type: "AUTO_SUBMITTED",
-          actor: "system",
-          title: "Application auto-submitted",
-          detail: result.confirmationText ?? "Greenhouse confirmation state detected.",
-        });
+      const outcome = await persistAutomationOutcome({
+        userId: user.id,
+        applicationId: application.id,
+        company: job.company,
+        successTitle: "Application auto-submitted",
+        successDetail: result.confirmationText ?? "Greenhouse confirmation state detected.",
+        result,
+      });
+      if (outcome === "auto_submitted") {
         results.autoSubmittedApplications += 1;
-        continue;
       }
-
-      if (!result.success && result.manualActionType) {
-        await updateApplicationAfterAutomation({
-          applicationId: application.id,
-          status: "NEEDS_USER_ACTION",
-          blockingReason: result.blockingReason ?? result.error ?? "Manual action required.",
-          manualActionType: result.manualActionType.toUpperCase() as never,
-          lastAutomationUrl: result.currentUrl ?? result.applyUrl,
-          needsUserActionAt: new Date(),
-          automationSession: {
-            checkpoint: result.checkpoint,
-            checkpointArtifacts: result.checkpointArtifacts,
-            preparedPayload: result.preparedPayload,
-            unknownRequiredFields: result.unknownRequiredFields,
-            missingProfileFields: result.missingProfileFields,
-          },
-        });
-        await recordApplicationEvent({
-          applicationId: application.id,
-          type: "NEEDS_USER_ACTION",
-          actor: "system",
-          title: "Manual action required",
-          detail: result.blockingReason ?? result.error ?? "The automation flow paused on friction or uncertainty.",
-        });
-        await createNotification({
-          userId: user.id,
-          applicationId: application.id,
-          type: "ACTION_REQUIRED",
-          title: `${job.company} needs your input`,
-          body: result.blockingReason ?? "The application flow paused and saved its prepared state.",
-          actionUrl: "/applications",
-          metadata: {
-            checkpointArtifacts: result.checkpointArtifacts,
-            currentUrl: result.currentUrl,
-          },
-        });
+      if (outcome === "needs_user_action") {
         results.needsUserActionApplications += 1;
-        continue;
       }
     }
   }
 
   return results;
+}
+
+export async function autofillApplicationForUser(input: {
+  userId: string;
+  applicationId: string;
+}) {
+  const context = await getApplicationAutomationContext(input.userId, input.applicationId);
+  if (!context || !context.resume || !context.user.profile || !context.user.preferences) {
+    return {
+      ok: false as const,
+      reason: "Application context is incomplete. Ensure onboarding and a default resume are present.",
+    };
+  }
+
+  const applyTarget = context.job.applyUrl ?? context.job.canonicalUrl;
+  const sourceUrl = context.job.applyUrl ?? context.job.canonicalUrl;
+  const isMock = isMockFlow(sourceUrl);
+  const isGreenhouse = isGreenhouseFlow(sourceUrl);
+
+  if (!isMock && !isGreenhouse) {
+    return {
+      ok: false as const,
+      reason: "Autofill is not supported for this ATS yet.",
+    };
+  }
+
+  if (!isMock && !externalAutofillEnabled()) {
+    return {
+      ok: false as const,
+      reason: "External Autofill is disabled. Enable JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=true to run live autofill against non-local job sites.",
+    };
+  }
+
+  const structuredDefaults = extractStructuredDefaults(context);
+  const generatedAnswers = context.generatedAnswers.map((answer) => ({
+    kind: answer.kind.toLowerCase() as GeneratedAnswer["kind"],
+    question: answer.questionText,
+    answer: answer.answerText,
+  }));
+  const resumePath = resolveDataPath(context.resume.storageKey);
+
+  await recordApplicationEvent({
+    applicationId: context.id,
+    type: "NOTE",
+    actor: "user",
+    title: "Autofill requested",
+    detail: `A ${isMock ? "mock" : "live"} autofill run was requested from the dashboard.`,
+  });
+
+  const result = isMock
+    ? await applyToMockJob({
+      jobUrl: applyTarget,
+      defaults: structuredDefaults,
+      resumePath,
+      generatedAnswers,
+      applicationId: context.id,
+      dryRun: false,
+    })
+    : await applyToGreenhouseJob({
+      jobUrl: applyTarget,
+      defaults: structuredDefaults,
+      resumePath,
+      generatedAnswers,
+      applicationId: context.id,
+      dryRun: false,
+    });
+
+  const outcome = await persistAutomationOutcome({
+    userId: input.userId,
+    applicationId: context.id,
+    company: context.job.company,
+    successTitle: "Application auto-submitted",
+    successDetail: result.confirmationText ?? "Autofill completed and a confirmation state was detected.",
+    result,
+  });
+
+  return {
+    ok: true as const,
+    outcome,
+    source: result.source,
+  };
 }
 
 function toStructuredProfile(user: Awaited<ReturnType<typeof getOnboardedUsersForPipeline>>[number]): StructuredProfile {
@@ -361,5 +414,175 @@ function autoApplyDryRun() {
 }
 
 function isSimpleFlow(url: string) {
+  return isGreenhouseFlow(url) || isMockFlow(url);
+}
+
+function isGreenhouseFlow(url: string) {
   return url.includes("greenhouse");
+}
+
+function isMockFlow(url: string) {
+  return url.includes("/mock/apply/") || url.includes("/mock/jobs/");
+}
+
+function externalAutofillEnabled() {
+  const raw = process.env.JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED;
+  if (raw === undefined) {
+    return false;
+  }
+  return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+}
+
+function shouldPreserveApplicationStatus(status: string) {
+  return [
+    "NEEDS_USER_ACTION",
+    "AUTO_SUBMITTED",
+    "SUBMITTED",
+    "RESPONDED",
+    "INTERVIEW",
+    "REJECTED",
+    "OFFER",
+  ].includes(status);
+}
+
+async function persistAutomationOutcome(input: {
+  userId: string;
+  applicationId: string;
+  company: string;
+  successTitle: string;
+  successDetail: string;
+  result: Awaited<ReturnType<typeof applyToGreenhouseJob>>;
+}) {
+  const { result } = input;
+
+  if (result.success && result.submitted) {
+    await updateApplicationAfterAutomation({
+      applicationId: input.applicationId,
+      status: "AUTO_SUBMITTED",
+      blockingReason: null,
+      manualActionType: null,
+      lastAutomationUrl: result.currentUrl ?? result.applyUrl,
+      autoSubmittedAt: new Date(),
+      submittedAt: new Date(),
+      needsUserActionAt: null,
+      automationSession: {
+        confirmationText: result.confirmationText,
+        preparedPayload: result.preparedPayload,
+        filledFields: result.filledFields,
+      },
+    });
+    await markOlderNotificationsReadForApplication(input.userId, input.applicationId);
+    await recordApplicationEvent({
+      applicationId: input.applicationId,
+      type: "AUTO_SUBMITTED",
+      actor: "system",
+      title: input.successTitle,
+      detail: input.successDetail,
+    });
+    return "auto_submitted" as const;
+  }
+
+  if (!result.success && result.manualActionType) {
+    await updateApplicationAfterAutomation({
+      applicationId: input.applicationId,
+      status: "NEEDS_USER_ACTION",
+      blockingReason: result.blockingReason ?? result.error ?? "Manual action required.",
+      manualActionType: result.manualActionType.toUpperCase() as never,
+      lastAutomationUrl: result.currentUrl ?? result.applyUrl,
+      autoSubmittedAt: null,
+      submittedAt: null,
+      needsUserActionAt: new Date(),
+      automationSession: {
+        checkpoint: result.checkpoint,
+        checkpointArtifacts: result.checkpointArtifacts,
+        preparedPayload: result.preparedPayload,
+        unknownRequiredFields: result.unknownRequiredFields,
+        missingProfileFields: result.missingProfileFields,
+        filledFields: result.filledFields,
+      },
+    });
+    await recordApplicationEvent({
+      applicationId: input.applicationId,
+      type: "NEEDS_USER_ACTION",
+      actor: "system",
+      title: "Manual action required",
+      detail: result.blockingReason ?? result.error ?? "The automation flow paused on friction or uncertainty.",
+    });
+    await createNotification({
+      userId: input.userId,
+      applicationId: input.applicationId,
+      type: "ACTION_REQUIRED",
+      title: `${input.company} needs your input`,
+      body: result.blockingReason ?? "The application flow paused and saved its prepared state.",
+      actionUrl: "/applications",
+      metadata: {
+        checkpointArtifacts: result.checkpointArtifacts,
+        currentUrl: result.currentUrl,
+      },
+    });
+    return "needs_user_action" as const;
+  }
+
+  await updateApplicationAfterAutomation({
+    applicationId: input.applicationId,
+    status: "PREPARED",
+    blockingReason: null,
+    manualActionType: null,
+    lastAutomationUrl: result.currentUrl ?? result.applyUrl,
+    autoSubmittedAt: null,
+    submittedAt: null,
+    needsUserActionAt: null,
+    automationSession: {
+      preparedPayload: result.preparedPayload,
+      filledFields: result.filledFields,
+      unknownRequiredFields: result.unknownRequiredFields,
+      missingProfileFields: result.missingProfileFields,
+      dryRun: result.dryRun,
+      error: result.error,
+    },
+  });
+
+  await recordApplicationEvent({
+    applicationId: input.applicationId,
+    type: "NOTE",
+    actor: "system",
+    title: "Autofill attempt finished without submission",
+    detail: result.error ?? "The autofill run did not reach a confirmation state.",
+  });
+
+  return "prepared" as const;
+}
+
+function extractStructuredDefaults(
+  context: NonNullable<Awaited<ReturnType<typeof getApplicationAutomationContext>>>,
+) {
+  const profile = toStructuredProfile(context.user as Awaited<ReturnType<typeof getOnboardedUsersForPipeline>>[number]);
+  const preferences = toJobPreferences(context.user as Awaited<ReturnType<typeof getOnboardedUsersForPipeline>>[number]);
+  const preparedPayload = isRecord(context.preparedPayload) ? context.preparedPayload : null;
+  const tailoredResume = isRecord(preparedPayload?.tailoredResume) ? preparedPayload.tailoredResume : null;
+
+  return buildStructuredApplicationDefaults({
+    profile,
+    preferences,
+    tailoredResume: tailoredResume
+      ? {
+        summaryLine: typeof tailoredResume.summaryLine === "string" ? tailoredResume.summaryLine : "",
+        tailoredBullets: Array.isArray(tailoredResume.tailoredBullets)
+          ? tailoredResume.tailoredBullets.filter((item): item is string => typeof item === "string")
+          : [],
+        keywordHighlights: Array.isArray(tailoredResume.keywordHighlights)
+          ? tailoredResume.keywordHighlights.filter((item): item is string => typeof item === "string")
+          : [],
+      }
+      : null,
+    generatedAnswers: context.generatedAnswers.map((answer) => ({
+      kind: answer.kind.toLowerCase() as GeneratedAnswer["kind"],
+      question: answer.questionText,
+      answer: answer.answerText,
+    })),
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

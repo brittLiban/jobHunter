@@ -145,6 +145,47 @@ export async function getApplicationsForUser(userId: string) {
   return rows.map((row) => serializeApplicationDetail(row));
 }
 
+export async function getExistingApplicationsForUser(userId: string) {
+  return prisma.application.findMany({
+    where: { userId },
+    select: {
+      id: true,
+      jobId: true,
+      status: true,
+    },
+  });
+}
+
+export async function getApplicationAutomationContext(userId: string, applicationId: string) {
+  return prisma.application.findFirst({
+    where: { id: applicationId, userId },
+    include: {
+      user: {
+        include: {
+          profile: true,
+          preferences: true,
+        },
+      },
+      job: {
+        include: {
+          source: true,
+        },
+      },
+      resume: true,
+      generatedAnswers: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      tailoredDocuments: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
+    },
+  });
+}
+
 export async function getNotificationsForUser(userId: string) {
   const notifications = await prisma.notification.findMany({
     where: { userId },

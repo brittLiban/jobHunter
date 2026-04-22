@@ -50,7 +50,8 @@ Current responsibilities:
 - apply hard business rules and fit scoring
 - tailor resume content and generate short answers
 - prepare applications and tracker records
-- attempt Greenhouse automation only when explicitly enabled
+- attempt safe autofill for local mock pages and Greenhouse flows
+- preserve submitted and paused application states across worker reruns
 - skip users who are not onboarded or do not yet have a default resume
 
 ### `packages/core`
@@ -103,6 +104,7 @@ The LLM layer is modular by task:
 - `JobScorerService`
 - `ResumeTailorService`
 - `ShortAnswerGeneratorService`
+- `ApplicationFieldResolverService`
 
 Provider support:
 
@@ -116,8 +118,10 @@ Hard rules remain outside the model, and structured profile facts are never dele
 
 Current automation responsibilities:
 
-- Greenhouse apply flow
+- Greenhouse and local mock apply flows
 - structured field mapping
+- LLM-assisted fallback field resolution
+- semantic field-resolution cache
 - checkpoint detection
 - checkpoint artifact capture
 - fail-closed submit behavior
@@ -206,6 +210,7 @@ Primary filesystem paths:
 - uploaded resumes: `data/uploads/resumes/`
 - seeded demo resume: `data/resumes/demo/`
 - automation checkpoints: `data/manual_checkpoints/<applicationId>/`
+- semantic field cache: `data/cache/field-resolution-cache.json`
 
 This keeps v1 simple while still preserving enough information for human-in-the-loop resume flows.
 
@@ -222,7 +227,7 @@ It is no longer the primary runtime path.
 ## Next Architecture Steps
 
 1. Add queue-backed orchestration and scheduling around the worker
-2. Expand automation coverage beyond Greenhouse
+2. Expand automation coverage beyond Greenhouse and the local mock verifier
 3. Harden auth for production use cases
 4. Add better observability and integration testing
 5. Formalize extension-oriented backend APIs

@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { StatusPill } from "@/components/status-pill";
 import { requireOnboardedUser } from "@/lib/auth";
-import { describeTrackerState, formatTimestamp } from "@/lib/application-presentation";
+import { describeTrackerState, formatTimestamp, supportsAutofill } from "@/lib/application-presentation";
 import { loadJobsPageData } from "@/lib/page-data";
 
 export default async function JobsPage() {
@@ -46,6 +46,11 @@ export default async function JobsPage() {
         <div className="list-table">
           {jobs.length === 0 ? <div className="list-row"><div><p>No jobs yet</p><span>Run the worker after onboarding and uploading a resume.</span></div></div> : null}
           {jobs.map((job) => {
+            const canAutofill = Boolean(
+              job.applicationId
+              && ["prepared", "needs_user_action"].includes(job.status)
+              && supportsAutofill(job.applyUrl ?? job.url),
+            );
             const state = describeTrackerState({
               status: job.status,
               blockingReason: job.blockingReason,
@@ -82,6 +87,15 @@ export default async function JobsPage() {
               <div>
                 <p>{job.sourceName}</p>
                 <span>{job.fitScore !== null ? `Fit ${job.fitScore}/100` : "Unscored"} · {formatTimestamp(job.applicationUpdatedAt ?? job.discoveredAt)}</span>
+              </div>
+              <div className="list-actions">
+                {canAutofill ? (
+                  <form action={`/api/applications/${job.applicationId}/autofill`} method="post">
+                    <button type="submit" className="button button-primary">
+                      {job.status === "needs_user_action" ? "Retry autofill" : "Autofill now"}
+                    </button>
+                  </form>
+                ) : null}
               </div>
               <div className="row-status">
                 <StatusPill status={(job.status as Parameters<typeof StatusPill>[0]["status"]) ?? "discovered"} />

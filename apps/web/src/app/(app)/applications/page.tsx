@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { StatusPill } from "@/components/status-pill";
 import { requireOnboardedUser } from "@/lib/auth";
-import { describeTrackerState, formatTimestamp } from "@/lib/application-presentation";
+import { describeTrackerState, formatTimestamp, supportsAutofill } from "@/lib/application-presentation";
 import { loadApplicationsPageData } from "@/lib/page-data";
 
 const guardrails = [
@@ -67,6 +67,8 @@ export default async function ApplicationsPage() {
             {applications.map((application) => {
               const state = describeTrackerState(application);
               const canMarkSubmitted = !["auto_submitted", "submitted", "skipped", "rejected", "offer"].includes(application.status);
+              const canAutofill = ["prepared", "needs_user_action"].includes(application.status)
+                && supportsAutofill(application.applyUrl ?? application.jobUrl);
               return (
               <div key={application.id} className="list-row">
                 <div>
@@ -100,6 +102,13 @@ export default async function ApplicationsPage() {
                   <StatusPill status={application.status as Parameters<typeof StatusPill>[0]["status"]} />
                 </div>
                 <div className="list-actions">
+                  {canAutofill ? (
+                    <form action={`/api/applications/${application.id}/autofill`} method="post">
+                      <button type="submit" className="button button-primary">
+                        {application.status === "needs_user_action" ? "Retry autofill" : "Autofill now"}
+                      </button>
+                    </form>
+                  ) : null}
                   {application.status === "needs_user_action" && application.lastAutomationUrl ? (
                     <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
                       Resume

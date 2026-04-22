@@ -16,8 +16,9 @@ Current operational defaults are intentionally conservative:
 
 - `JOBHUNTER_AUTO_APPLY_ENABLED=false`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN=true`
+- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=false`
 
-That means the worker can discover, score, tailor, and prepare applications without live-submitting to external sites unless you explicitly opt in.
+That means the worker can discover, score, tailor, and prepare applications without live-submitting to external sites unless you explicitly opt in. Local mock apply pages are still allowed so the full autofill and submit loop can be verified safely in Docker.
 
 The system must pause rather than bypass:
 
@@ -75,6 +76,12 @@ npm run dev --workspace @jobhunter/web
 
 Then open `http://localhost:3000`, log in, complete onboarding, upload a resume, and use the dashboard's `Run worker now` action if you want to trigger a single cycle from the UI.
 
+After the worker prepares applications:
+
+- use `Autofill now` to launch Playwright and actually fill the supported apply page
+- use `Apply page` only when you want to inspect the employer page yourself without triggering automation
+- if the flow pauses, use `Saved resume point` or `Resume where paused` to continue from the latest captured page
+
 ### Run the worker once
 
 ```powershell
@@ -122,7 +129,8 @@ Current source ingestion coverage:
 
 Current automated submission coverage:
 
-- Greenhouse
+- local Mock apply pages
+- Greenhouse when `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=true`
 
 Default source targets when environment variables are not overridden:
 
@@ -152,10 +160,26 @@ When this happens, the system should preserve:
 
 The user can then resume the live application or reopen it from the app dashboard.
 If the user completes the application manually, they should mark it submitted from the Applications page so the tracker and dashboard move it out of the attention queue.
+If the dashboard shows `Saved resume point`, that link opens the most recent page the automation reached. It is the fastest way to confirm what was already filled before you continue.
 
 Checkpoint artifacts are written under:
 
 - `data/manual_checkpoints/<applicationId>/`
+
+## Autofill Resolution
+
+Supported autofill behavior today:
+
+- common profile fields come from structured profile data, not the LLM
+- unfamiliar field labels can be resolved through the field resolver LLM
+- successful label mappings are cached in `data/cache/field-resolution-cache.json`
+- worker reruns preserve `auto_submitted`, `submitted`, and `needs_user_action` states instead of rewriting them to `prepared`
+
+The dashboard intent is:
+
+- `Autofill now`: run browser automation
+- `Apply page`: open the employer page without automation
+- `Saved resume point` or `Resume where paused`: reopen the last page reached by automation
 
 ## Important Environment Variables
 
@@ -165,6 +189,7 @@ Checkpoint artifacts are written under:
 - `JOBHUNTER_ENABLE_DEMO_SEED`
 - `JOBHUNTER_AUTO_APPLY_ENABLED`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN`
+- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED`
 - `PLAYWRIGHT_HEADLESS`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
@@ -182,6 +207,7 @@ Checkpoint artifacts are written under:
 - uploaded resumes: `data/uploads/resumes/`
 - seeded demo resume: `data/resumes/demo/`
 - manual checkpoints: `data/manual_checkpoints/`
+- semantic field cache: `data/cache/field-resolution-cache.json`
 
 ## Legacy Python Notes
 

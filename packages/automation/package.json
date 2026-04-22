@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@jobhunter/core": "file:../core",
+    "@jobhunter/llm": "file:../llm",
     "playwright": "latest"
   }
 }

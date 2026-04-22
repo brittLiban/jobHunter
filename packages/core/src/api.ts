@@ -36,6 +36,7 @@ export const reopenApplicationInputSchema = z.object({
 
 export const jobsResponseSchema = z.object({
   jobs: z.array(jobPostingSchema.extend({
+    applicationId: z.string().nullable(),
     fitScore: z.number().int().min(0).max(100).nullable(),
     status: z.string(),
     decision: z.enum(["apply", "skip"]).nullable(),

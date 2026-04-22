@@ -40,42 +40,49 @@ export async function upsertDiscoveredJob(input: {
   rawPayload?: unknown;
 }) {
   const { sourceId, job, rawPayload } = input;
+  const sharedUpdate = {
+    sourceId,
+    externalId: job.externalId,
+    canonicalUrl: job.url,
+    applyUrl: job.applyUrl,
+    company: job.company,
+    title: job.title,
+    locationText: job.location,
+    workMode: toPrismaWorkMode(job.workMode),
+    salaryMin: job.salaryMin ?? null,
+    salaryMax: job.salaryMax ?? null,
+    salaryCurrency: job.salaryCurrency,
+    descriptionText: job.description,
+    rawPayload: toOptionalJson(rawPayload),
+    lastSeenAt: new Date(),
+  };
+
+  if (job.externalId) {
+    return prisma.job.upsert({
+      where: {
+        sourceId_externalId: {
+          sourceId,
+          externalId: job.externalId,
+        },
+      },
+      update: sharedUpdate,
+      create: {
+        ...sharedUpdate,
+        discoveredAt: new Date(job.discoveredAt),
+        firstSeenAt: new Date(job.discoveredAt),
+      },
+    });
+  }
+
   return prisma.job.upsert({
     where: {
       canonicalUrl: job.url,
     },
-    update: {
-      sourceId,
-      externalId: job.externalId,
-      applyUrl: job.applyUrl,
-      company: job.company,
-      title: job.title,
-      locationText: job.location,
-      workMode: toPrismaWorkMode(job.workMode),
-      salaryMin: job.salaryMin ?? null,
-      salaryMax: job.salaryMax ?? null,
-      salaryCurrency: job.salaryCurrency,
-      descriptionText: job.description,
-      rawPayload: toOptionalJson(rawPayload),
-      lastSeenAt: new Date(),
-    },
+    update: sharedUpdate,
     create: {
-      sourceId,
-      externalId: job.externalId,
-      canonicalUrl: job.url,
-      applyUrl: job.applyUrl,
-      company: job.company,
-      title: job.title,
-      locationText: job.location,
-      workMode: toPrismaWorkMode(job.workMode),
-      salaryMin: job.salaryMin ?? null,
-      salaryMax: job.salaryMax ?? null,
-      salaryCurrency: job.salaryCurrency,
-      descriptionText: job.description,
-      rawPayload: toOptionalJson(rawPayload),
+      ...sharedUpdate,
       discoveredAt: new Date(job.discoveredAt),
       firstSeenAt: new Date(job.discoveredAt),
-      lastSeenAt: new Date(),
     },
   });
 }
@@ -222,10 +229,10 @@ export async function ensureApplicationRecord(input: {
       manualActionType: input.manualActionType ?? null,
       lastAutomationUrl: input.lastAutomationUrl ?? null,
       automationSession: toOptionalJson(input.automationSession),
-      preparedAt: input.preparedAt ?? undefined,
-      autoSubmittedAt: input.autoSubmittedAt ?? undefined,
-      submittedAt: input.submittedAt ?? undefined,
-      needsUserActionAt: input.needsUserActionAt ?? undefined,
+      preparedAt: optionalDateValue(input.preparedAt),
+      autoSubmittedAt: optionalDateValue(input.autoSubmittedAt),
+      submittedAt: optionalDateValue(input.submittedAt),
+      needsUserActionAt: optionalDateValue(input.needsUserActionAt),
     },
     create: {
       userId: input.userId,
@@ -243,10 +250,10 @@ export async function ensureApplicationRecord(input: {
       manualActionType: input.manualActionType ?? null,
       lastAutomationUrl: input.lastAutomationUrl ?? null,
       automationSession: toOptionalJson(input.automationSession),
-      preparedAt: input.preparedAt ?? undefined,
-      autoSubmittedAt: input.autoSubmittedAt ?? undefined,
-      submittedAt: input.submittedAt ?? undefined,
-      needsUserActionAt: input.needsUserActionAt ?? undefined,
+      preparedAt: optionalDateValue(input.preparedAt),
+      autoSubmittedAt: optionalDateValue(input.autoSubmittedAt),
+      submittedAt: optionalDateValue(input.submittedAt),
+      needsUserActionAt: optionalDateValue(input.needsUserActionAt),
     },
   });
 }
@@ -328,6 +335,122 @@ export async function getOnboardedUsersForPipeline() {
   });
 }
 
+export async function reconcileApplicationStateConsistency(userId: string) {
+  await prisma.$transaction([
+    prisma.application.updateMany({
+      where: {
+        userId,
+        status: "PREPARED",
+        autoSubmittedAt: {
+          not: null,
+        },
+      },
+      data: {
+        status: "AUTO_SUBMITTED",
+        blockingReason: null,
+        manualActionType: null,
+        needsUserActionAt: null,
+      },
+    }),
+    prisma.application.updateMany({
+      where: {
+        userId,
+        status: "PREPARED",
+        autoSubmittedAt: null,
+        submittedAt: {
+          not: null,
+        },
+      },
+      data: {
+        status: "SUBMITTED",
+        blockingReason: null,
+        manualActionType: null,
+        needsUserActionAt: null,
+      },
+    }),
+    prisma.application.updateMany({
+      where: {
+        userId,
+        status: "PREPARED",
+        OR: [
+          {
+            needsUserActionAt: {
+              not: null,
+            },
+          },
+          {
+            manualActionType: {
+              not: null,
+            },
+          },
+          {
+            blockingReason: {
+              not: null,
+            },
+          },
+        ],
+      },
+      data: {
+        blockingReason: null,
+        manualActionType: null,
+        needsUserActionAt: null,
+      },
+    }),
+    prisma.application.updateMany({
+      where: {
+        userId,
+        status: {
+          in: ["AUTO_SUBMITTED", "SUBMITTED"],
+        },
+        OR: [
+          {
+            needsUserActionAt: {
+              not: null,
+            },
+          },
+          {
+            manualActionType: {
+              not: null,
+            },
+          },
+          {
+            blockingReason: {
+              not: null,
+            },
+          },
+        ],
+      },
+      data: {
+        blockingReason: null,
+        manualActionType: null,
+        needsUserActionAt: null,
+      },
+    }),
+    prisma.application.updateMany({
+      where: {
+        userId,
+        status: "NEEDS_USER_ACTION",
+        OR: [
+          {
+            autoSubmittedAt: {
+              not: null,
+            },
+          },
+          {
+            submittedAt: {
+              not: null,
+            },
+          },
+        ],
+      },
+      data: {
+        autoSubmittedAt: null,
+        submittedAt: null,
+      },
+    }),
+  ]);
+}
+
 export async function findPromptTemplate(taskKind: "JOB_SCORER" | "RESUME_TAILOR" | "SHORT_ANSWER_GENERATOR") {
   return prisma.promptTemplate.findFirst({
     where: {
@@ -394,9 +517,9 @@ export async function updateApplicationAfterAutomation(input: {
       manualActionType: input.manualActionType ?? null,
       lastAutomationUrl: input.lastAutomationUrl ?? null,
       automationSession: toOptionalJson(input.automationSession),
-      autoSubmittedAt: input.autoSubmittedAt ?? undefined,
-      submittedAt: input.submittedAt ?? undefined,
-      needsUserActionAt: input.needsUserActionAt ?? undefined,
+      autoSubmittedAt: optionalDateValue(input.autoSubmittedAt),
+      submittedAt: optionalDateValue(input.submittedAt),
+      needsUserActionAt: optionalDateValue(input.needsUserActionAt),
     },
   });
 }
@@ -441,6 +564,14 @@ function toOptionalJson(value: unknown): Prisma.InputJsonValue | Prisma.Nullable
   }
 
   return value as Prisma.InputJsonValue;
+}
+
+function optionalDateValue(value: Date | null | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return value;
 }
 
 function toRequiredJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {

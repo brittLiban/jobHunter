@@ -7,6 +7,7 @@ export class MockJobSource implements JobSourceAdapter {
 
   async discoverJobs(target: SourceDiscoveryTarget): Promise<JobPosting[]> {
     const discoveredAt = new Date().toISOString();
+    const appBaseUrl = resolveMockBaseUrl();
     const jobs: JobPosting[] = [
       {
         id: "mock_1",
@@ -21,9 +22,9 @@ export class MockJobSource implements JobSourceAdapter {
         salaryMax: 185000,
         salaryCurrency: "USD",
         description:
-          "Build APIs, automation hooks, internal tools, and partner integrations that make developer workflows faster and more reliable.",
-        url: "https://mock.jobhunter.local/jobs/vercel-integrations",
-        applyUrl: "https://mock.jobhunter.local/apply/vercel-integrations",
+          "Build TypeScript APIs, automation hooks, Docker-backed internal tools, and platform integrations that make developer workflows faster and more reliable.",
+        url: `${appBaseUrl}/mock/jobs/vercel-integrations`,
+        applyUrl: `${appBaseUrl}/mock/apply/vercel-integrations`,
         discoveredAt,
       },
       {
@@ -39,9 +40,9 @@ export class MockJobSource implements JobSourceAdapter {
         salaryMax: 205000,
         salaryCurrency: "USD",
         description:
-          "Own backend services, systems reliability, and product-facing APIs for collaboration-heavy experiences.",
-        url: "https://mock.jobhunter.local/jobs/figma-backend",
-        applyUrl: "https://mock.jobhunter.local/apply/figma-backend",
+          "Own backend services, product-facing APIs, testing discipline, and cloud reliability for collaboration-heavy experiences built on TypeScript platforms.",
+        url: `${appBaseUrl}/mock/jobs/figma-backend`,
+        applyUrl: `${appBaseUrl}/mock/apply/figma-backend`,
         discoveredAt,
       },
       {
@@ -57,13 +58,17 @@ export class MockJobSource implements JobSourceAdapter {
         salaryMax: 180000,
         salaryCurrency: "USD",
         description:
-          "Ship software, automation, and internal platform improvements with strong engineering fundamentals and excellent execution discipline.",
-        url: "https://mock.jobhunter.local/jobs/stripe-new-grad",
-        applyUrl: "https://mock.jobhunter.local/apply/stripe-new-grad",
+          "Ship software as a new grad engineer across backend APIs, automation, testing, and internal platform improvements with strong engineering fundamentals.",
+        url: `${appBaseUrl}/mock/jobs/stripe-new-grad`,
+        applyUrl: `${appBaseUrl}/mock/apply/stripe-new-grad`,
         discoveredAt,
       },
     ];
 
     return jobs.map((job) => normalizeJobPosting(job));
   }
+}
+
+function resolveMockBaseUrl() {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }

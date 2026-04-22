@@ -1,17 +1,28 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import type { GeneratedAnswer, StructuredApplicationDefaults } from "@jobhunter/core";
-import { applicationCheckpointSchema } from "@jobhunter/core";
-import type { Page } from "playwright";
+import { applicationCheckpointSchema, resolveDataPath } from "@jobhunter/core";
+import type { Locator, Page } from "playwright";
 import { chromium } from "playwright";
 
+import { resolveStructuredValueWithAssistance } from "./assisted-field-resolution";
 import { detectCheckpointFromText } from "./checkpoints";
-import { resolveStructuredValue, detectManualActionType, normalizeLabel } from "./field-mapping";
+import { detectManualActionType, normalizeLabel } from "./field-mapping";
 import type { ApplyResult } from "./result";
 
 const SUBMIT_SUCCESS = /(thank you|application submitted|application received|we ll be in touch|successfully submitted)/i;
 const SUBMIT_ERROR = /(please fix|field is required|invalid|error)/i;
+
+type ApplyToHostedJobInput = {
+  source: "greenhouse" | "mock";
+  applyUrl: string;
+  defaults: StructuredApplicationDefaults;
+  resumePath: string;
+  generatedAnswers: GeneratedAnswer[];
+  applicationId: string;
+  dryRun?: boolean;
+};
 
 export async function applyToGreenhouseJob(input: {
   jobUrl: string;
@@ -21,9 +32,40 @@ export async function applyToGreenhouseJob(input: {
   applicationId: string;
   dryRun?: boolean;
 }): Promise<ApplyResult> {
-  const applyUrl = deriveGreenhouseApplyUrl(input.jobUrl);
+  return applyToHostedJobForm({
+    source: "greenhouse",
+    applyUrl: deriveGreenhouseApplyUrl(input.jobUrl),
+    defaults: input.defaults,
+    resumePath: input.resumePath,
+    generatedAnswers: input.generatedAnswers,
+    applicationId: input.applicationId,
+    dryRun: input.dryRun,
+  });
+}
+
+export async function applyToMockJob(input: {
+  jobUrl: string;
+  defaults: StructuredApplicationDefaults;
+  resumePath: string;
+  generatedAnswers: GeneratedAnswer[];
+  applicationId: string;
+  dryRun?: boolean;
+}): Promise<ApplyResult> {
+  return applyToHostedJobForm({
+    source: "mock",
+    applyUrl: input.jobUrl,
+    defaults: input.defaults,
+    resumePath: input.resumePath,
+    generatedAnswers: input.generatedAnswers,
+    applicationId: input.applicationId,
+    dryRun: input.dryRun,
+  });
+}
+
+async function applyToHostedJobForm(input: ApplyToHostedJobInput): Promise<ApplyResult> {
   const preparedPayload = {
-    applyUrl,
+    source: input.source,
+    applyUrl: input.applyUrl,
     defaults: input.defaults,
     generatedAnswers: input.generatedAnswers,
     resumePath: input.resumePath,
@@ -39,11 +81,19 @@ export async function applyToGreenhouseJob(input: {
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(applyUrl, { waitUntil: "networkidle" });
+    await page.goto(input.applyUrl, { waitUntil: "networkidle" });
 
     await fillCommonFields(page, input.defaults, filledFields);
     await uploadResume(page, input.resumePath, filledFields);
-    await fillKnownRequiredFields(page, input.defaults, input.generatedAnswers, filledFields, unknownRequiredFields, missingProfileFields);
+    await fillKnownRequiredFields(
+      page,
+      input.applyUrl,
+      input.defaults,
+      input.generatedAnswers,
+      filledFields,
+      unknownRequiredFields,
+      missingProfileFields,
+    );
 
     const pageText = await page.locator("body").innerText().catch(() => "");
     const checkpoint = detectCheckpointFromText(pageText);
@@ -60,8 +110,8 @@ export async function applyToGreenhouseJob(input: {
         success: false,
         submitted: false,
         dryRun: Boolean(input.dryRun),
-        source: "greenhouse",
-        applyUrl,
+        source: input.source,
+        applyUrl: input.applyUrl,
         checkpoint: typedCheckpoint,
         manualActionType: typedCheckpoint.manualActionType,
         blockingReason: typedCheckpoint.reason,
@@ -80,8 +130,8 @@ export async function applyToGreenhouseJob(input: {
         success: false,
         submitted: false,
         dryRun: Boolean(input.dryRun),
-        source: "greenhouse",
-        applyUrl,
+        source: input.source,
+        applyUrl: input.applyUrl,
         checkpoint: {
           manualActionType: "missing_required_info",
           reason: "Required fields remain unresolved after structured autofill.",
@@ -104,8 +154,8 @@ export async function applyToGreenhouseJob(input: {
         success: true,
         submitted: false,
         dryRun: true,
-        source: "greenhouse",
-        applyUrl,
+        source: input.source,
+        applyUrl: input.applyUrl,
         filledFields,
         unknownRequiredFields,
         missingProfileFields,
@@ -121,8 +171,8 @@ export async function applyToGreenhouseJob(input: {
         success: false,
         submitted: false,
         dryRun: false,
-        source: "greenhouse",
-        applyUrl,
+        source: input.source,
+        applyUrl: input.applyUrl,
         checkpoint: {
           manualActionType: "ambiguous_submit_state",
           reason: "Submit button was not found on the application page.",
@@ -146,8 +196,8 @@ export async function applyToGreenhouseJob(input: {
       success: true,
       submitted: true,
       dryRun: false,
-      source: "greenhouse",
-      applyUrl,
+      source: input.source,
+      applyUrl: input.applyUrl,
       confirmationText,
       filledFields,
       unknownRequiredFields,
@@ -160,9 +210,9 @@ export async function applyToGreenhouseJob(input: {
       success: false,
       submitted: false,
       dryRun: Boolean(input.dryRun),
-      source: "greenhouse",
-      applyUrl,
-      error: error instanceof Error ? error.message : "Greenhouse apply failed.",
+      source: input.source,
+      applyUrl: input.applyUrl,
+      error: error instanceof Error ? error.message : "Autofill failed.",
       blockingReason: "Unknown application structure or runtime failure interrupted the flow.",
       manualActionType: "unknown_form_structure",
       filledFields,
@@ -222,6 +272,7 @@ async function uploadResume(page: Page, resumePath: string, filledFields: string
 
 async function fillKnownRequiredFields(
   page: Page,
+  applyUrl: string,
   defaults: StructuredApplicationDefaults,
   generatedAnswers: GeneratedAnswer[],
   filledFields: string[],
@@ -229,6 +280,8 @@ async function fillKnownRequiredFields(
   missingProfileFields: string[],
 ) {
   const requiredLabels = await getRequiredPromptTexts(page);
+  const sourceHost = safeHostFromUrl(applyUrl);
+
   for (const label of requiredLabels) {
     if (filledFields.some((filled) => normalizeLabel(filled) === label)) {
       continue;
@@ -240,7 +293,12 @@ async function fillKnownRequiredFields(
       continue;
     }
 
-    const resolved = resolveStructuredValue(displayLabel, defaults, generatedAnswers);
+    const resolved = await resolveStructuredValueWithAssistance({
+      sourceHost,
+      label: displayLabel,
+      defaults,
+      generatedAnswers,
+    });
     if (!resolved.value) {
       if (resolved.missingField) {
         missingProfileFields.push(resolved.missingField);
@@ -277,7 +335,7 @@ async function getRequiredPromptTexts(page: Page) {
 }
 
 async function captureCheckpointArtifacts(page: Page, applicationId: string, pageText: string) {
-  const directory = resolve("data", "manual_checkpoints", applicationId);
+  const directory = resolveDataPath("manual_checkpoints", applicationId);
   await mkdir(directory, { recursive: true });
   const screenshotPath = join(directory, "checkpoint.png");
   const htmlPath = join(directory, "checkpoint.html");
@@ -318,37 +376,60 @@ async function labelExists(page: Page, label: string) {
 }
 
 async function fillTextField(page: Page, labelText: string, value: string) {
-  const fieldId = await getFieldId(page, labelText);
-  const locator = page.locator(`[id=${JSON.stringify(fieldId)}]`).first();
+  const locator = await getFieldLocator(page, labelText);
   await locator.scrollIntoViewIfNeeded();
   await locator.fill(value);
 }
 
 async function selectOption(page: Page, labelText: string, value: string) {
-  const fieldId = await getFieldId(page, labelText);
-  const locator = page.locator(`[id=${JSON.stringify(fieldId)}]`).first();
+  const locator = await getFieldLocator(page, labelText);
   await locator.scrollIntoViewIfNeeded();
+  const tagName = await locator.evaluate((element) => (element.tagName || "").toLowerCase());
+  if (tagName === "select") {
+    const optionValue = await locator.evaluate((element, requestedValue) => {
+      if (!(element instanceof HTMLSelectElement)) {
+        return null;
+      }
+      const normalizedValue = requestedValue.trim().toLowerCase();
+      const matched = Array.from(element.options).find((option) =>
+        option.value === requestedValue
+        || option.label.trim().toLowerCase() === normalizedValue
+        || option.text.trim().toLowerCase() === normalizedValue,
+      );
+      return matched?.value ?? null;
+    }, value);
+
+    if (optionValue) {
+      await locator.selectOption(optionValue);
+      return;
+    }
+  }
   await locator.click();
   await locator.fill(value);
   await page.keyboard.press("ArrowDown").catch(() => undefined);
   await page.keyboard.press("Enter").catch(() => undefined);
 }
 
-async function getFieldId(page: Page, labelText: string) {
+async function getFieldLocator(page: Page, labelText: string): Promise<Locator> {
   const label = await findMatchingLabel(page, normalizeLabel(labelText));
   if (!label) {
     throw new Error(`Field label not found: ${labelText}`);
   }
   const fieldId = await label.getAttribute("for");
-  if (!fieldId) {
-    throw new Error(`Field label does not reference an input: ${labelText}`);
+  if (fieldId) {
+    return page.locator(`[id=${JSON.stringify(fieldId)}]`).first();
   }
-  return fieldId;
+
+  const nestedField = label.locator("input, textarea, select, [role='combobox']").first();
+  if (await nestedField.count()) {
+    return nestedField;
+  }
+
+  throw new Error(`Field label does not reference or contain an input: ${labelText}`);
 }
 
 async function fieldKind(page: Page, labelText: string) {
-  const fieldId = await getFieldId(page, labelText);
-  const locator = page.locator(`[id=${JSON.stringify(fieldId)}]`).first();
+  const locator = await getFieldLocator(page, labelText);
   const metadata = await locator.evaluate((element) => ({
     tagName: (element.tagName || "").toLowerCase(),
     type: (element.getAttribute("type") || "").toLowerCase(),
@@ -392,4 +473,12 @@ async function findDisplayLabel(page: Page, query: string) {
     }
   }
   return null;
+}
+
+function safeHostFromUrl(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown-host";
+  }
 }

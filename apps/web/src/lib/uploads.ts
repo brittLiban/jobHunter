@@ -1,9 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
+import { resolveDataPath } from "@jobhunter/core";
+
 export async function saveUploadedResumeFile(file: File) {
-  const root = resolve("data", "uploads", "resumes");
+  const root = resolveDataPath("uploads", "resumes");
   await mkdir(root, { recursive: true });
 
   const safeName = basename(file.name || "resume").replace(/[^a-zA-Z0-9._-]+/g, "-");

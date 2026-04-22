@@ -27,15 +27,17 @@ Implemented in the TypeScript stack:
 - modular job ingestion adapters for Mock, Greenhouse, Ashby, Lever, and Workable
 - rules-first scoring pipeline with persisted `JobScore`, `TailoredDocument`, and `GeneratedAnswer` records
 - worker pipeline that discovers jobs, scores fit, prepares applications, tracks events, and raises notifications
-- Greenhouse Playwright apply flow with fail-closed checkpoint handling and structured autofill
-- manual-action workflow with prepared payload persistence and resume/reopen support
+- Playwright autofill flows for Greenhouse and the local mock apply pages
+- LLM-assisted field resolution with semantic cache persistence for unfamiliar field labels
+- manual-action workflow with prepared payload persistence, saved resume points, and resume/reopen support
+- application-state reconciliation so worker reruns preserve submitted and paused items instead of downgrading them
 - Dockerized `web`, `worker`, `migrate`, and `postgres` services
 
 Still intentionally incomplete:
 
 - OAuth providers and production auth hardening
 - queue/scheduler infrastructure beyond direct worker runs
-- broader ATS automation coverage beyond the current Greenhouse path
+- broader ATS automation coverage beyond the current Greenhouse and local mock paths
 - richer tests, observability, and outcome analytics
 - browser-extension-facing APIs beyond the current backend shape
 
@@ -60,8 +62,9 @@ The product can auto-submit when the application flow is simple and reliable, bu
 
 - `JOBHUNTER_AUTO_APPLY_ENABLED=false`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN=true`
+- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=false`
 
-That means a local worker run will discover, score, prepare, and track applications by default, but it will not live-submit to external sites unless you explicitly opt in.
+That means a local worker run will discover, score, prepare, and track applications by default, but it will not live-submit to external sites unless you explicitly opt in. The local mock apply flow remains available so you can verify real autofill and submit behavior safely inside Docker.
 
 The automation layer never attempts to bypass:
 
@@ -83,7 +86,8 @@ Current ingestion adapters:
 
 Current automated submission path:
 
-- Greenhouse only
+- local Mock apply pages
+- Greenhouse when external autofill is explicitly enabled
 
 Everything else can still be discovered, scored, filtered, tailored, and tracked, but not all sources can be fully auto-submitted yet.
 
@@ -99,6 +103,7 @@ Important variables:
 - `JOBHUNTER_ENABLE_DEMO_SEED`
 - `JOBHUNTER_AUTO_APPLY_ENABLED`
 - `JOBHUNTER_AUTO_APPLY_DRY_RUN`
+- `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED`
 - `PLAYWRIGHT_HEADLESS`
 - `OPENAI_API_KEY` and `OPENAI_MODEL` for OpenAI-backed LLM calls
 - `OLLAMA_URL` and `OLLAMA_MODEL` for Ollama-backed local LLM calls
@@ -120,7 +125,8 @@ For a clean local test of the current product surface:
 3. Complete onboarding so the structured profile and preferences exist.
 4. Upload at least one base resume from the Resumes page.
 5. Trigger a pipeline cycle from the dashboard or run the worker from the CLI.
-6. Review prepared applications, notifications, and any `needs_user_action` items in the app.
+6. Use `Autofill now` from the Dashboard or Applications page for supported apply flows.
+7. Review any `needs_user_action` items and resume from the saved page if the site paused the automation.
 
 Important behavior:
 
@@ -129,6 +135,8 @@ Important behavior:
 - the uploaded file and the pasted base resume text are both important
 - the file is used for resume upload during automation
 - the pasted base text is what scoring, tailoring, and answer generation use
+- `Autofill now` is the action that actually launches Playwright and fills the employer page
+- `Apply page` only opens the employer page directly and does not trigger automation by itself
 
 ## Local Development
 
@@ -209,6 +217,8 @@ Demo credentials:
 
 The worker has also been validated locally against Docker Postgres with a seeded onboarded user. In the current configuration it discovers jobs, scores fit, prepares applications, and records tracker state without performing live submission by default.
 
+The demo mock jobs are wired to local `/mock/apply/*` pages so you can verify actual field fill, resume upload, confirmation detection, and dashboard status changes without touching a real employer site.
+
 ## Default Discovery Targets
 
 If you do not override the source environment variables, the worker uses these built-in defaults:
@@ -240,6 +250,7 @@ When an application enters `needs_user_action`, the system is expected to preser
 
 Use the Applications page to either resume the interrupted flow or reopen the application for another worker attempt.
 If you finish an application yourself from a prepared packet or paused flow, use the `Mark submitted` action so the dashboard reflects that it is actually complete.
+Worker reruns preserve `auto_submitted`, `submitted`, and `needs_user_action` records instead of rewriting them back to `prepared`.
 
 ## File Locations
 
@@ -248,6 +259,7 @@ Important runtime files are stored under `data/`:
 - uploaded resumes: `data/uploads/resumes/`
 - seeded demo resume: `data/resumes/demo/`
 - manual checkpoint captures: `data/manual_checkpoints/<applicationId>/`
+- semantic field cache: `data/cache/field-resolution-cache.json`
 
 Checkpoint directories can contain screenshots, HTML captures, and extracted text for paused automation flows.
 
@@ -257,7 +269,8 @@ Current behavior a user should know before relying on the system:
 
 - local development defaults are intentionally non-submitting
 - automation does not bypass CAPTCHA, email codes, or security checks
-- Greenhouse is the only ATS with an implemented submit path today
+- local Mock and Greenhouse are the only implemented autofill paths today
+- live external autofill remains disabled unless `JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED=true`
 - if no LLM provider is configured, the pipeline uses deterministic mock output rather than live model calls
 - the worker currently runs on demand rather than from a production queue or scheduler
 

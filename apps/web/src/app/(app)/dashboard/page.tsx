@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { StatusPill } from "@/components/status-pill";
 import { requireOnboardedUser } from "@/lib/auth";
-import { describeTrackerState, formatTimestamp } from "@/lib/application-presentation";
+import { describeTrackerState, formatTimestamp, supportsAutofill } from "@/lib/application-presentation";
 import { loadDashboardPageData } from "@/lib/page-data";
 
 export default async function DashboardPage() {
@@ -123,15 +123,22 @@ export default async function DashboardPage() {
               <div key={application.id} className="stack-item">
                 <p>{application.company} · {application.role}</p>
                 <span>{state.detail}</span>
-                <div className="row-links">
-                  {application.lastAutomationUrl ? (
-                    <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
-                      Resume where paused
-                    </a>
-                  ) : application.applyUrl ? (
-                    <a href={application.applyUrl} className="button button-secondary" target="_blank" rel="noreferrer">
-                      Open apply page
-                    </a>
+                  <div className="row-links">
+                    {application.lastAutomationUrl ? (
+                      <a href={application.lastAutomationUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                        Resume where paused
+                      </a>
+                    ) : application.applyUrl ? (
+                      <a href={application.applyUrl} className="button button-secondary" target="_blank" rel="noreferrer">
+                        Open apply page
+                      </a>
+                    ) : null}
+                  {supportsAutofill(application.applyUrl ?? application.jobUrl) ? (
+                    <form action={`/api/applications/${application.id}/autofill`} method="post">
+                      <button type="submit" className="button button-primary">
+                        Retry autofill
+                      </button>
+                    </form>
                   ) : null}
                   <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
                     <button type="submit" className="button button-secondary">
@@ -173,6 +180,13 @@ export default async function DashboardPage() {
                 <span>{state.detail}</span>
               </div>
               <div className="list-actions">
+                {supportsAutofill(application.applyUrl ?? application.jobUrl) ? (
+                  <form action={`/api/applications/${application.id}/autofill`} method="post">
+                    <button type="submit" className="button button-primary">
+                      Autofill now
+                    </button>
+                  </form>
+                ) : null}
                 <a href={application.jobUrl} className="button button-secondary" target="_blank" rel="noreferrer">
                   Job post
                 </a>
