@@ -47,7 +47,7 @@
 
 2. Worker orchestration
    - Add scheduled execution and queue-backed background processing
-   - Enforce daily volume limits directly in the worker loop
+   - Daily volume limits are now enforced in the worker loop with queued overflow and rolling 24-hour capacity tracking
    - Add backoff and retry policy for flaky source syncs and automation retries
 
 3. Automation coverage

@@ -30,6 +30,7 @@ Implemented in the TypeScript stack:
 - Playwright autofill flows for Greenhouse and the local mock apply pages
 - LLM-assisted field resolution with semantic cache persistence for unfamiliar field labels
 - manual-action workflow with prepared payload persistence, saved resume points, and resume/reopen support
+- rolling 24-hour daily target enforcement that queues overflow jobs before tailoring work is generated
 - application-state reconciliation so worker reruns preserve submitted and paused items instead of downgrading them
 - Dockerized `web`, `worker`, `migrate`, and `postgres` services
 
@@ -127,6 +128,7 @@ For a clean local test of the current product surface:
 5. Trigger a pipeline cycle from the dashboard or run the worker from the CLI.
 6. Use `Autofill now` from the Dashboard or Applications page for supported apply flows.
 7. Review any `needs_user_action` items and resume from the saved page if the site paused the automation.
+8. If your daily target is full, expect additional matched jobs to remain queued until the next slot opens.
 
 Important behavior:
 
@@ -235,7 +237,7 @@ If you want a narrower or different set of job sources, set the corresponding `J
 
 The main application states a user will see are:
 
-- `queued`: the job is eligible and waiting for worker processing
+- `queued`: the job passed the fit rules but is waiting because the rolling 24-hour target is full
 - `prepared`: tailored materials and prepared payloads are saved in JobHunter, but the employer site is not necessarily filled yet
 - `needs_user_action`: the worker reached the live application flow, preserved state, and paused because a human was required
 - `auto_submitted`: automation detected a clear successful submission state on the employer site
@@ -251,6 +253,7 @@ When an application enters `needs_user_action`, the system is expected to preser
 Use the Applications page to either resume the interrupted flow or reopen the application for another worker attempt.
 If you finish an application yourself from a prepared packet or paused flow, use the `Mark submitted` action so the dashboard reflects that it is actually complete.
 Worker reruns preserve `auto_submitted`, `submitted`, and `needs_user_action` records instead of rewriting them back to `prepared`.
+The dashboard also shows how many preparation slots were used in the last 24 hours and how many remain before more jobs can leave the queued bucket.
 
 ## File Locations
 

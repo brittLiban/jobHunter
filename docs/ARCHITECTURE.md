@@ -48,6 +48,7 @@ Current responsibilities:
 - discover jobs from configured adapters
 - persist job sources and discovered jobs
 - apply hard business rules and fit scoring
+- enforce the rolling 24-hour daily target before tailoring overflow jobs
 - tailor resume content and generate short answers
 - prepare applications and tracker records
 - attempt safe autofill for local mock pages and Greenhouse flows
@@ -171,6 +172,12 @@ The worker must move an application into `needs_user_action` when:
 - the form structure is unusual
 - required data is missing
 - submit state is ambiguous
+
+The worker may keep an application in `queued` when:
+
+- hard rules and fit threshold passed
+- the rolling 24-hour daily target is already full
+- the job should wait without generating more tailoring work yet
 
 ## Data Boundaries
 

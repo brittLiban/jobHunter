@@ -43,7 +43,7 @@ export async function getUserWorkspace(userId: string): Promise<UserWorkspace | 
 }
 
 export async function getDashboardSnapshotForUser(userId: string): Promise<DashboardSnapshot> {
-  const [applications, notifications] = await Promise.all([
+  const [applications, notifications, preferences] = await Promise.all([
     prisma.application.findMany({
       where: { userId },
       include: {
@@ -67,9 +67,19 @@ export async function getDashboardSnapshotForUser(userId: string): Promise<Dashb
       },
       take: 10,
     }),
+    prisma.userPreference.findUnique({
+      where: { userId },
+      select: {
+        dailyTargetVolume: true,
+      },
+    }),
   ]);
 
-  return serializeDashboardSnapshot({ applications, notifications });
+  return serializeDashboardSnapshot({
+    applications,
+    notifications,
+    dailyTargetVolume: preferences?.dailyTargetVolume ?? 15,
+  });
 }
 
 export async function getJobsForUser(userId: string) {
@@ -152,6 +162,7 @@ export async function getExistingApplicationsForUser(userId: string) {
       id: true,
       jobId: true,
       status: true,
+      preparedAt: true,
     },
   });
 }

@@ -10,6 +10,7 @@ export default async function JobsPage() {
   const submittedCount = jobs.filter((job) => job.status === "auto_submitted" || job.status === "submitted").length;
   const needsAttentionCount = jobs.filter((job) => job.status === "needs_user_action").length;
   const preparedCount = jobs.filter((job) => job.status === "prepared").length;
+  const queuedCount = jobs.filter((job) => job.status === "queued").length;
 
   return (
     <AppShell
@@ -19,12 +20,16 @@ export default async function JobsPage() {
     >
       <section className="app-grid app-metrics">
         <article className="app-card">
-          <span>Above Threshold</span>
+          <span>Tracked Jobs</span>
           <strong>{jobs.length}</strong>
         </article>
         <article className="app-card">
           <span>Prepared</span>
           <strong>{preparedCount}</strong>
+        </article>
+        <article className="app-card">
+          <span>Queued</span>
+          <strong>{queuedCount}</strong>
         </article>
         <article className="app-card">
           <span>Needs Attention</span>
@@ -40,7 +45,7 @@ export default async function JobsPage() {
         <div className="card-heading">
           <div>
             <p className="eyebrow">Source Coverage</p>
-            <h2>Jobs above threshold</h2>
+            <h2>Tracked jobs</h2>
           </div>
         </div>
         <div className="list-table">

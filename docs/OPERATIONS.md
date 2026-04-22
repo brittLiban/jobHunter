@@ -81,6 +81,7 @@ After the worker prepares applications:
 - use `Autofill now` to launch Playwright and actually fill the supported apply page
 - use `Apply page` only when you want to inspect the employer page yourself without triggering automation
 - if the flow pauses, use `Saved resume point` or `Resume where paused` to continue from the latest captured page
+- if the rolling 24-hour target is full, matched jobs stay queued until capacity opens instead of generating more tailored artifacts
 
 ### Run the worker once
 
@@ -174,6 +175,8 @@ Supported autofill behavior today:
 - unfamiliar field labels can be resolved through the field resolver LLM
 - successful label mappings are cached in `data/cache/field-resolution-cache.json`
 - worker reruns preserve `auto_submitted`, `submitted`, and `needs_user_action` states instead of rewriting them to `prepared`
+- the worker enforces `dailyTargetVolume` over a rolling 24-hour window before generating tailored materials
+- jobs above the cap remain in `queued` so token-heavy tailoring work is deferred until the next slot opens
 
 The dashboard intent is:
 

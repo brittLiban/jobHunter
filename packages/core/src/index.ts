@@ -6,3 +6,4 @@ export * from "./paths";
 export * from "./profile-defaults";
 export * from "./rules";
 export * from "./status";
+export * from "./volume-window";

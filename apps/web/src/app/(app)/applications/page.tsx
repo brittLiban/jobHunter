@@ -12,7 +12,7 @@ const guardrails = [
 ] as const;
 
 const statusGuide = [
-  "queued: job passed thresholding and is waiting for the next preparation or automation attempt",
+  "queued: job passed thresholding but is waiting for the next daily preparation slot",
   "prepared: the packet is ready inside JobHunter, but the employer site is not necessarily filled yet",
   "needs_user_action: the worker reached the site, saved its state, and paused because a human was needed",
   "auto_submitted: automation detected a clear confirmation state and completed the submission itself",
@@ -25,6 +25,7 @@ export default async function ApplicationsPage() {
   const submittedCount = applications.filter((application) => application.status === "auto_submitted" || application.status === "submitted").length;
   const needsAttentionCount = applications.filter((application) => application.status === "needs_user_action").length;
   const preparedCount = applications.filter((application) => application.status === "prepared").length;
+  const queuedCount = applications.filter((application) => application.status === "queued").length;
 
   return (
     <AppShell
@@ -44,6 +45,10 @@ export default async function ApplicationsPage() {
         <article className="app-card">
           <span>Prepared, Not Filled Yet</span>
           <strong>{preparedCount}</strong>
+        </article>
+        <article className="app-card">
+          <span>Queued for Next Slot</span>
+          <strong>{queuedCount}</strong>
         </article>
       </section>
 

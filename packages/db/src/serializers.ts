@@ -8,6 +8,7 @@ import type {
   Notification,
   StructuredProfile,
 } from "@jobhunter/core";
+import { isWithinDailyVolumeWindow } from "@jobhunter/core";
 import type {
   Application,
   ApplicationEvent,
@@ -59,8 +60,12 @@ export function serializeDashboardSnapshot(input: {
     }
   >;
   notifications: PrismaNotification[];
+  dailyTargetVolume: number;
 }): DashboardSnapshot {
-  const { applications, notifications } = input;
+  const { applications, notifications, dailyTargetVolume } = input;
+  const preparedInLast24Hours = applications.filter((application) =>
+    isWithinDailyVolumeWindow(application.preparedAt),
+  ).length;
 
   return {
     overview: {
@@ -71,6 +76,9 @@ export function serializeDashboardSnapshot(input: {
       autoSubmitted: applications.filter((application) => application.status === "AUTO_SUBMITTED").length,
       submittedTotal: applications.filter((application) => ["AUTO_SUBMITTED", "SUBMITTED"].includes(application.status)).length,
       needsUserAction: applications.filter((application) => application.status === "NEEDS_USER_ACTION").length,
+      dailyTargetVolume,
+      preparedInLast24Hours,
+      remainingDailyCapacity: Math.max(dailyTargetVolume - preparedInLast24Hours, 0),
     },
     applications: applications.map((application) => serializeApplicationRecord(application)),
     notifications: notifications.map((notification) => serializeNotification(notification)),

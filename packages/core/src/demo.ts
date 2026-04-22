@@ -9,6 +9,9 @@ export const demoDashboardSnapshot: DashboardSnapshot = {
     autoSubmitted: 11,
     submittedTotal: 11,
     needsUserAction: 3,
+    dailyTargetVolume: 15,
+    preparedInLast24Hours: 12,
+    remainingDailyCapacity: 3,
   },
   applications: [
     {

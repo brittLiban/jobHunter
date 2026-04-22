@@ -55,7 +55,7 @@ export function describeTrackerState(input: TrackerStateInput): TrackerStateSumm
     case "queued":
       return {
         label: "Queued for preparation",
-        detail: "This job passed the fit rules, but the application packet is not ready yet.",
+        detail: buildQueuedSummary(input.preparedPayload),
       };
     case "skipped":
       return {
@@ -111,6 +111,14 @@ function buildPreparedSummary(payload: unknown) {
   }
 
   return `Prepared in JobHunter: ${parts.join(", ")}.`;
+}
+
+function buildQueuedSummary(payload: unknown) {
+  if (isRecord(payload) && typeof payload.queuedReason === "string" && payload.queuedReason.trim()) {
+    return payload.queuedReason;
+  }
+
+  return "This job passed the fit rules, but the application packet is waiting for the next available preparation slot.";
 }
 
 function extractPreparedMaterialStats(payload: unknown) {

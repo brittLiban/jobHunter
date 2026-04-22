@@ -16,6 +16,9 @@ export default async function DashboardPage() {
   const readyApplications = applications
     .filter((application) => application.status === "prepared")
     .slice(0, 5);
+  const queuedApplications = applications
+    .filter((application) => application.status === "queued")
+    .slice(0, 5);
 
   return (
     <AppShell
@@ -37,12 +40,24 @@ export default async function DashboardPage() {
           <strong>{overview.prepared}</strong>
         </article>
         <article className="app-card">
+          <span>Queued</span>
+          <strong>{overview.queued}</strong>
+        </article>
+        <article className="app-card">
           <span>Actually Submitted</span>
           <strong>{overview.submittedTotal}</strong>
         </article>
         <article className="app-card">
           <span>Needs Attention</span>
           <strong>{overview.needsUserAction}</strong>
+        </article>
+        <article className="app-card">
+          <span>24h Target Used</span>
+          <strong>{overview.preparedInLast24Hours}/{overview.dailyTargetVolume}</strong>
+        </article>
+        <article className="app-card">
+          <span>24h Slots Left</span>
+          <strong>{overview.remainingDailyCapacity}</strong>
         </article>
       </section>
 
@@ -55,6 +70,9 @@ export default async function DashboardPage() {
         </div>
         <p className="app-description">
           Trigger discovery, scoring, tailoring, and apply preparation for your current account. A prepared status means the packet is ready in JobHunter. It does not mean the employer site has been filled yet unless the application later moves to Submitted or Needs Attention.
+        </p>
+        <p className="app-description">
+          The worker enforces your rolling 24-hour target volume before it generates tailored materials. Jobs above the cap stay queued so the best remaining roles are ready for the next open slot instead of burning extra tokens today.
         </p>
         <form action="/api/worker/run" method="post">
           <button type="submit" className="button button-primary">
@@ -195,6 +213,50 @@ export default async function DashboardPage() {
                     Apply page
                   </a>
                 ) : null}
+              </div>
+              <div className="row-status">
+                <StatusPill status={application.status} />
+              </div>
+            </div>
+          );
+          })}
+        </div>
+      </section>
+
+      <section className="app-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Queued Next</p>
+            <h2>Passed fit rules, waiting for the next daily slot</h2>
+          </div>
+        </div>
+        <div className="list-table">
+          {queuedApplications.length === 0 ? <div className="list-row"><div><p>No queued backlog</p><span>Jobs that pass the rules but exceed the rolling 24-hour target will appear here.</span></div></div> : null}
+          {queuedApplications.map((application) => {
+            const state = describeTrackerState(application);
+            return (
+            <div key={application.id} className="list-row">
+              <div>
+                <p>{application.company}</p>
+                <span>{application.role}</span>
+                <div className="row-links">
+                  <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
+                    Job post
+                  </a>
+                  {application.applyUrl ? (
+                    <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
+                      Apply page
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+              <div>
+                <p>{state.label}</p>
+                <span>{state.detail}</span>
+              </div>
+              <div>
+                <p>{application.fitScore}/100</p>
+                <span>{application.source} · {formatTimestamp(application.updatedAt)}</span>
               </div>
               <div className="row-status">
                 <StatusPill status={application.status} />

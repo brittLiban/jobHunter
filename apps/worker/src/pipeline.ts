@@ -2,9 +2,12 @@ import { applyToGreenhouseJob, applyToMockJob } from "@jobhunter/automation";
 import {
   buildStructuredApplicationDefaults,
   evaluateJobRules,
+  isWithinDailyVolumeWindow,
   meetsFitThreshold,
   resolveDataPath,
+  type FitAssessment,
   type GeneratedAnswer,
+  type JobPosting,
   type JobPreferences,
   type StructuredProfile,
 } from "@jobhunter/core";
@@ -33,6 +36,20 @@ import {
 type PipelineOptions = {
   onlyUserId?: string;
 };
+
+type ExistingApplicationSummary = Awaited<ReturnType<typeof getExistingApplicationsForUser>>[number];
+
+type EligibleJobCandidate = {
+  persistedJob: Awaited<ReturnType<typeof upsertDiscoveredJob>>;
+  job: JobPosting;
+  persistedScore: Awaited<ReturnType<typeof upsertUserScore>>;
+  score: FitAssessment;
+  ruleEvaluation: ReturnType<typeof evaluateJobRules>;
+  existingApplication?: ExistingApplicationSummary;
+};
+
+const DAILY_TARGET_QUEUE_REASON =
+  "Daily target volume was reached, so this application is queued until another preparation slot opens.";
 
 export async function runPipeline(options: PipelineOptions = {}) {
   const sourceTargets = buildDefaultSourceTargetsFromEnv();
@@ -74,6 +91,7 @@ export async function runPipeline(options: PipelineOptions = {}) {
     discoveredJobs: persistedJobs.length,
     processedUsers: users.length,
     scoredApplications: 0,
+    queuedApplications: 0,
     preparedApplications: 0,
     autoSubmittedApplications: 0,
     needsUserActionApplications: 0,
@@ -92,13 +110,24 @@ export async function runPipeline(options: PipelineOptions = {}) {
     await reconcileApplicationStateConsistency(user.id);
     const existingApplications = await getExistingApplicationsForUser(user.id);
     const existingApplicationsByJobId = new Map(existingApplications.map((application) => [application.jobId, application]));
+    const eligibleCandidates: EligibleJobCandidate[] = [];
+    let remainingDailyCapacity = Math.max(
+      preferences.dailyTargetVolume
+      - existingApplications.filter((application) => isWithinDailyVolumeWindow(application.preparedAt)).length,
+      0,
+    );
 
     for (const persistedJob of persistedJobs) {
       const sourceRecord = sourceRecords.find((source) => source.id === persistedJob.sourceId);
-      const job = {
+      const existingApplication = existingApplicationsByJobId.get(persistedJob.id);
+      if (existingApplication && shouldPreserveApplicationStatus(existingApplication.status)) {
+        continue;
+      }
+
+      const job: JobPosting = {
         id: persistedJob.id,
         externalId: persistedJob.externalId ?? undefined,
-        sourceKind: (sourceRecord?.kind.toLowerCase() ?? "mock") as "mock",
+        sourceKind: (sourceRecord?.kind.toLowerCase() ?? "mock") as JobPosting["sourceKind"],
         sourceName: sourceRecord?.name ?? "Unknown Source",
         company: persistedJob.company,
         title: persistedJob.title,
@@ -142,10 +171,6 @@ export async function runPipeline(options: PipelineOptions = {}) {
           reasons: ruleEvaluation.reasons,
         },
       });
-      const existingApplication = existingApplicationsByJobId.get(persistedJob.id);
-      if (existingApplication && shouldPreserveApplicationStatus(existingApplication.status)) {
-        continue;
-      }
 
       const thresholdPassed = ruleEvaluation.passed && meetsFitThreshold(score.fitScore, preferences.fitThreshold);
       if (!thresholdPassed || score.decision !== "apply") {
@@ -184,86 +209,86 @@ export async function runPipeline(options: PipelineOptions = {}) {
         continue;
       }
 
-      const tailoredResume = await tailor.tailor({
+      eligibleCandidates.push({
+        persistedJob,
         job,
-        resumeText: resume.baseText,
+        persistedScore,
+        score,
+        ruleEvaluation,
+        existingApplication,
       });
-      const generatedAnswers = await answerGenerator.generate({
-        job,
-        profile,
-        tailoredResume,
-      });
+    }
 
-      const structuredDefaults = buildStructuredApplicationDefaults({
+    for (const candidate of eligibleCandidates.sort(compareEligibleJobCandidates)) {
+      if (remainingDailyCapacity <= 0) {
+        const application = await ensureQueuedApplication({
+          userId: user.id,
+          resumeId: resume.id,
+          fitThreshold: preferences.fitThreshold,
+          candidate,
+        });
+
+        if (candidate.existingApplication?.status !== "QUEUED") {
+          await recordApplicationEvent({
+            applicationId: application.id,
+            type: "QUEUED",
+            actor: "system",
+            title: "Application queued",
+            detail: DAILY_TARGET_QUEUE_REASON,
+            metadata: {
+              fitScore: candidate.score.fitScore,
+              dailyTargetVolume: preferences.dailyTargetVolume,
+            },
+          });
+        }
+
+        results.queuedApplications += 1;
+        existingApplicationsByJobId.set(candidate.persistedJob.id, {
+          id: application.id,
+          jobId: application.jobId,
+          status: application.status,
+          preparedAt: application.preparedAt,
+        });
+        continue;
+      }
+
+      const prepared = await prepareEligibleApplication({
+        userId: user.id,
+        resumeId: resume.id,
+        resumeText: resume.baseText,
+        resumePath,
         profile,
         preferences,
-        tailoredResume,
-        generatedAnswers: generatedAnswers.items as GeneratedAnswer[],
+        candidate,
+        tailor,
+        answerGenerator,
       });
 
-      const application = await ensureApplicationRecord({
-        userId: user.id,
-        jobId: persistedJob.id,
-        sourceId: persistedJob.sourceId,
-        resumeId: resume.id,
-        scoreId: persistedScore.id,
-        fitScoreSnapshot: score.fitScore,
-        fitThresholdSnapshot: preferences.fitThreshold,
-        status: "PREPARED",
-        simpleFlowConfirmed: isSimpleFlow(job.url),
-        highConfidence: score.confidence >= 0.8,
-        preparedPayload: {
-          structuredDefaults,
-          generatedAnswers,
-          tailoredResume,
-          resumePath,
-        },
-        automationSession: null,
-        preparedAt: new Date(),
-        autoSubmittedAt: null,
-        submittedAt: null,
-        needsUserActionAt: null,
-      });
-
-      await replaceTailoredArtifacts({
-        applicationId: application.id,
-        userId: user.id,
-        jobId: persistedJob.id,
-        resumeId: resume.id,
-        tailoredResume,
-        generatedAnswers,
-      });
-
-      await recordApplicationEvent({
-        applicationId: application.id,
-        type: "PREPARED",
-        actor: "system",
-        title: "Application prepared",
-        detail: "Structured profile fields, tailored resume content, and generated answers were saved.",
-        metadata: {
-          fitScore: score.fitScore,
-          confidence: score.confidence,
-        },
-      });
       results.preparedApplications += 1;
-      existingApplicationsByJobId.set(persistedJob.id, application);
+      remainingDailyCapacity -= 1;
+      existingApplicationsByJobId.set(candidate.persistedJob.id, {
+        id: prepared.application.id,
+        jobId: prepared.application.jobId,
+        status: prepared.application.status,
+        preparedAt: prepared.application.preparedAt,
+      });
 
-      if (!autoApplyEnabled() || !job.url.includes("greenhouse")) {
+      if (!autoApplyEnabled() || !prepared.candidate.job.url.includes("greenhouse")) {
         continue;
       }
 
       const result = await applyToGreenhouseJob({
-        jobUrl: job.applyUrl ?? job.url,
-        defaults: structuredDefaults,
+        jobUrl: prepared.candidate.job.applyUrl ?? prepared.candidate.job.url,
+        defaults: prepared.structuredDefaults,
         resumePath,
-        generatedAnswers: generatedAnswers.items as GeneratedAnswer[],
-        applicationId: application.id,
+        generatedAnswers: prepared.generatedAnswers.items as GeneratedAnswer[],
+        applicationId: prepared.application.id,
         dryRun: autoApplyDryRun(),
       });
       const outcome = await persistAutomationOutcome({
         userId: user.id,
-        applicationId: application.id,
-        company: job.company,
+        applicationId: prepared.application.id,
+        company: prepared.candidate.job.company,
         successTitle: "Application auto-submitted",
         successDetail: result.confirmationText ?? "Greenhouse confirmation state detected.",
         result,
@@ -435,6 +460,7 @@ function externalAutofillEnabled() {
 
 function shouldPreserveApplicationStatus(status: string) {
   return [
+    "PREPARED",
     "NEEDS_USER_ACTION",
     "AUTO_SUBMITTED",
     "SUBMITTED",
@@ -443,6 +469,137 @@ function shouldPreserveApplicationStatus(status: string) {
     "REJECTED",
     "OFFER",
   ].includes(status);
+}
+
+async function ensureQueuedApplication(input: {
+  userId: string;
+  resumeId: string;
+  fitThreshold: number;
+  candidate: EligibleJobCandidate;
+}) {
+  return ensureApplicationRecord({
+    userId: input.userId,
+    jobId: input.candidate.persistedJob.id,
+    sourceId: input.candidate.persistedJob.sourceId,
+    resumeId: input.resumeId,
+    scoreId: input.candidate.persistedScore.id,
+    fitScoreSnapshot: input.candidate.score.fitScore,
+    fitThresholdSnapshot: input.fitThreshold,
+    status: "QUEUED",
+    simpleFlowConfirmed: isSimpleFlow(input.candidate.job.url),
+    highConfidence: input.candidate.score.confidence >= 0.8,
+    preparedPayload: {
+      score: input.candidate.score,
+      ruleEvaluation: input.candidate.ruleEvaluation,
+      queuedReason: DAILY_TARGET_QUEUE_REASON,
+    },
+    automationSession: null,
+    preparedAt: null,
+    autoSubmittedAt: null,
+    submittedAt: null,
+    needsUserActionAt: null,
+  });
+}
+
+async function prepareEligibleApplication(input: {
+  userId: string;
+  resumeId: string;
+  resumeText: string;
+  resumePath: string;
+  profile: StructuredProfile;
+  preferences: JobPreferences;
+  candidate: EligibleJobCandidate;
+  tailor: ResumeTailorService;
+  answerGenerator: ShortAnswerGeneratorService;
+}) {
+  const tailoredResume = await input.tailor.tailor({
+    job: input.candidate.job,
+    resumeText: input.resumeText,
+  });
+  const generatedAnswers = await input.answerGenerator.generate({
+    job: input.candidate.job,
+    profile: input.profile,
+    tailoredResume,
+  });
+
+  const structuredDefaults = buildStructuredApplicationDefaults({
+    profile: input.profile,
+    preferences: input.preferences,
+    tailoredResume,
+    generatedAnswers: generatedAnswers.items as GeneratedAnswer[],
+  });
+
+  const application = await ensureApplicationRecord({
+    userId: input.userId,
+    jobId: input.candidate.persistedJob.id,
+    sourceId: input.candidate.persistedJob.sourceId,
+    resumeId: input.resumeId,
+    scoreId: input.candidate.persistedScore.id,
+    fitScoreSnapshot: input.candidate.score.fitScore,
+    fitThresholdSnapshot: input.preferences.fitThreshold,
+    status: "PREPARED",
+    simpleFlowConfirmed: isSimpleFlow(input.candidate.job.url),
+    highConfidence: input.candidate.score.confidence >= 0.8,
+    preparedPayload: {
+      structuredDefaults,
+      generatedAnswers,
+      tailoredResume,
+      resumePath: input.resumePath,
+    },
+    automationSession: null,
+    preparedAt: new Date(),
+    autoSubmittedAt: null,
+    submittedAt: null,
+    needsUserActionAt: null,
+  });
+
+  await replaceTailoredArtifacts({
+    applicationId: application.id,
+    userId: input.userId,
+    jobId: input.candidate.persistedJob.id,
+    resumeId: input.resumeId,
+    tailoredResume,
+    generatedAnswers,
+  });
+
+  await recordApplicationEvent({
+    applicationId: application.id,
+    type: "PREPARED",
+    actor: "system",
+    title: "Application prepared",
+    detail: input.candidate.existingApplication?.status === "QUEUED"
+      ? "A daily target slot opened, so the queued job was prepared with structured profile fields and tailored materials."
+      : "Structured profile fields, tailored resume content, and generated answers were saved.",
+    metadata: {
+      fitScore: input.candidate.score.fitScore,
+      confidence: input.candidate.score.confidence,
+    },
+  });
+
+  return {
+    application,
+    candidate: input.candidate,
+    generatedAnswers,
+    structuredDefaults,
+  };
+}
+
+function compareEligibleJobCandidates(a: EligibleJobCandidate, b: EligibleJobCandidate) {
+  const aQueued = a.existingApplication?.status === "QUEUED" ? 1 : 0;
+  const bQueued = b.existingApplication?.status === "QUEUED" ? 1 : 0;
+  if (aQueued !== bQueued) {
+    return bQueued - aQueued;
+  }
+
+  if (a.score.fitScore !== b.score.fitScore) {
+    return b.score.fitScore - a.score.fitScore;
+  }
+
+  if (a.score.confidence !== b.score.confidence) {
+    return b.score.confidence - a.score.confidence;
+  }
+
+  return new Date(b.job.discoveredAt).getTime() - new Date(a.job.discoveredAt).getTime();
 }
 
 async function persistAutomationOutcome(input: {
