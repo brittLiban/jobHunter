@@ -8,12 +8,14 @@ It uses a user-scoped extension token to fetch prepared packets from JobHunter a
 
 - Chrome extension source: `apps/extension/chrome`
 
-## Install (Chrome)
+## Install (Edge Recommended)
 
-1. Open `chrome://extensions`.
+1. Open `edge://extensions`.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
 4. Select `apps/extension/chrome`.
+
+Chrome also works with the same folder using `chrome://extensions`.
 
 ## Configure
 

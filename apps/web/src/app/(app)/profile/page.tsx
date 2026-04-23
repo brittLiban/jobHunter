@@ -180,7 +180,7 @@ export default async function ProfilePage() {
             <p>Install location</p>
             <span>
               Extension source files live at <code>apps/extension/chrome</code>.
-              Load it in Chrome via <code>chrome://extensions</code> with Developer Mode enabled.
+              Load it in Edge via <code>edge://extensions</code> (Developer mode), or Chrome via <code>chrome://extensions</code>.
             </span>
           </div>
           <div className="stack-item">

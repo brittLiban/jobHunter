@@ -214,6 +214,7 @@ docker compose up -d --build web worker
 Extension source for local loading:
 
 - `apps/extension/chrome` (Chrome Manifest V3)
+- load in Edge via `edge://extensions` (Developer mode), or Chrome via `chrome://extensions`
 - quick guide: `apps/extension/README.md`
 
 If you want a truly clean local database before retesting discovery:

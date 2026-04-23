@@ -116,7 +116,7 @@ Live supported ATS behavior is different:
 
 Extension mode:
 
-- install from `apps/extension/chrome` via `chrome://extensions` (Developer Mode)
+- install from `apps/extension/chrome` via `edge://extensions` (Developer mode), or `chrome://extensions`
 - create an extension token in Settings
 - paste base URL + token into extension popup
 - open queue item with `Open for extension autofill`
