@@ -10,7 +10,7 @@ import { buildExtensionAutofillPacket } from "@/lib/extension-packet";
 export async function GET(request: Request) {
   const token = await authenticateExtensionRequest(request);
   if (!token) {
-    return NextResponse.json({ error: "Unauthorized extension token." }, { status: 401 });
+    return withExtensionCors(NextResponse.json({ error: "Unauthorized extension token." }, { status: 401 }));
   }
 
   const url = new URL(request.url);
@@ -19,9 +19,9 @@ export async function GET(request: Request) {
   const refreshMaterials = parseBoolean(url.searchParams.get("refresh"));
 
   if (!applicationId && !pageUrl) {
-    return NextResponse.json({
+    return withExtensionCors(NextResponse.json({
       error: "Provide applicationId or pageUrl.",
-    }, { status: 400 });
+    }, { status: 400 }));
   }
 
   const context = applicationId
@@ -29,9 +29,9 @@ export async function GET(request: Request) {
     : await findApplicationAutomationContextByUrl(token.userId, pageUrl);
 
   if (!context || !context.resume || !context.user.profile || !context.user.preferences) {
-    return NextResponse.json({
+    return withExtensionCors(NextResponse.json({
       error: "No prepared application context matched this request.",
-    }, { status: 404 });
+    }, { status: 404 }));
   }
 
   const appBaseUrl = `${url.protocol}//${url.host}`;
@@ -41,10 +41,17 @@ export async function GET(request: Request) {
     refreshMaterials,
   });
 
-  return NextResponse.json(packet, {
+  return withExtensionCors(NextResponse.json(packet, {
     headers: {
       "Cache-Control": "no-store",
     },
+  }));
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: extensionCorsHeaders,
   });
 }
 
@@ -53,4 +60,18 @@ function parseBoolean(value: string | null) {
     return false;
   }
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+const extensionCorsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Max-Age": "86400",
+} as const;
+
+function withExtensionCors(response: NextResponse) {
+  for (const [key, value] of Object.entries(extensionCorsHeaders)) {
+    response.headers.set(key, value);
+  }
+  return response;
 }

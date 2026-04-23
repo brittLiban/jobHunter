@@ -28,7 +28,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
 
       const packetUrl = `${config.baseUrl || DEFAULT_BASE_URL}/api/extension/autofill-packet?${params.toString()}`;
-      const packetResponse = await fetch(packetUrl, {
+      const packetResponse = await fetchWithLocalhostFallback(packetUrl, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${config.token}`,
@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       let resumeFile = null;
       if (packet?.resume?.fileUrl) {
-        const resumeResponse = await fetch(packet.resume.fileUrl, {
+        const resumeResponse = await fetchWithLocalhostFallback(packet.resume.fileUrl, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${config.token}`,
@@ -70,7 +70,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     } catch (error) {
       sendResponse({
         ok: false,
-        error: error instanceof Error ? error.message : "Unknown extension error.",
+        error: toHumanErrorMessage(error),
       });
     }
   })();
@@ -86,7 +86,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   chrome.storage.local.set(
     {
       jobhunterConfig: {
-        baseUrl: message.baseUrl || DEFAULT_BASE_URL,
+        baseUrl: normalizeBaseUrl(message.baseUrl || DEFAULT_BASE_URL),
         token: message.token || "",
         refreshMaterials: typeof message.refreshMaterials === "boolean" ? message.refreshMaterials : true,
       },
@@ -116,14 +116,77 @@ function readConfig() {
     chrome.storage.local.get(["jobhunterConfig"], (result) => {
       const raw = result.jobhunterConfig || {};
       resolve({
-        baseUrl: typeof raw.baseUrl === "string" && raw.baseUrl.trim()
-          ? raw.baseUrl.trim().replace(/\/$/, "")
-          : DEFAULT_BASE_URL,
+        baseUrl: normalizeBaseUrl(typeof raw.baseUrl === "string" ? raw.baseUrl : DEFAULT_BASE_URL),
         token: typeof raw.token === "string" ? raw.token.trim() : "",
         refreshMaterials: typeof raw.refreshMaterials === "boolean" ? raw.refreshMaterials : true,
       });
     });
   });
+}
+
+function normalizeBaseUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return DEFAULT_BASE_URL;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  try {
+    const parsed = new URL(withProtocol);
+    return `${parsed.protocol}//${parsed.host}`.replace(/\/$/, "");
+  } catch {
+    return DEFAULT_BASE_URL;
+  }
+}
+
+async function fetchWithLocalhostFallback(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (primaryError) {
+    const fallbackUrl = toLoopbackFallbackUrl(url);
+    if (!fallbackUrl) {
+      throw buildNetworkError(primaryError, url, null);
+    }
+
+    try {
+      return await fetch(fallbackUrl, options);
+    } catch (fallbackError) {
+      throw buildNetworkError(fallbackError, url, fallbackUrl);
+    }
+  }
+}
+
+function toLoopbackFallbackUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.toLowerCase() !== "localhost") {
+      return null;
+    }
+    parsed.hostname = "127.0.0.1";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function buildNetworkError(error, primaryUrl, fallbackUrl) {
+  const message = error instanceof Error ? error.message : "Failed to fetch.";
+  const parts = [
+    message || "Failed to fetch.",
+    `Could not reach JobHunter API at ${primaryUrl}.`,
+  ];
+  if (fallbackUrl) {
+    parts.push(`Fallback ${fallbackUrl} also failed.`);
+  }
+  parts.push("Verify http://localhost:3000 is running and extension site access is allowed.");
+  return new Error(parts.join(" "));
+}
+
+function toHumanErrorMessage(error) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Unknown extension error.";
 }
 
 function blobToBase64(blob) {
