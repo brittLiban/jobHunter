@@ -1,22 +1,39 @@
 const AUTO_FILL_FLAG_PREFIX = "jobhunter_autofill_done_";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!message || message.type !== "JOBHUNTER_AUTOFILL_CURRENT_TAB") {
+  if (!message || typeof message.type !== "string") {
     return false;
   }
 
-  runAutofill({
-    applicationId: message.applicationId || "",
-    refreshMaterials: Boolean(message.refreshMaterials),
-  })
-    .then((result) => sendResponse(result))
-    .catch((error) =>
-      sendResponse({
-        ok: false,
-        error: error instanceof Error ? error.message : "Autofill failed.",
+  if (message.type === "JOBHUNTER_AUTOFILL_CURRENT_TAB") {
+    runAutofill({
+      applicationId: message.applicationId || "",
+      refreshMaterials: Boolean(message.refreshMaterials),
+    })
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Autofill failed.",
+        }))
+    ;
+    return true;
+  }
+
+  if (message.type === "JOBHUNTER_APPLY_PACKET") {
+    applyPacket(message.packet || {}, message.resumeFile || null)
+      .then((report) => sendResponse({
+        ok: true,
+        ...report,
       }))
-  ;
-  return true;
+      .catch((error) => sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not apply packet in this frame.",
+      }));
+    return true;
+  }
+
+  return false;
 });
 
 const pageUrl = new URL(window.location.href);
@@ -26,9 +43,11 @@ if (hintedApplicationId) {
   if (!sessionStorage.getItem(onceKey)) {
     sessionStorage.setItem(onceKey, "1");
     window.setTimeout(() => {
-      runAutofill({
+      chrome.runtime.sendMessage({
+        type: "JOBHUNTER_AUTOFILL_TAB",
         applicationId: hintedApplicationId,
         refreshMaterials: pageUrl.searchParams.get("jhRefresh") === "1",
+        pageUrl: window.location.href,
       }).catch(() => undefined);
     }, 650);
   }
@@ -65,13 +84,16 @@ async function applyPacket(packet, resumeFile) {
   const answerLookup = buildAnswerLookup(generatedAnswers, defaults);
   const fieldOverrides = normalizeOverrideMap(packet.fieldOverrides);
   const fields = collectFormFields();
+  const detectedFieldCount = fields.length;
   let filledFieldCount = 0;
+  let usableFieldCount = 0;
   let resumeUploaded = false;
 
   for (const field of fields) {
     if (!isUsableField(field)) {
       continue;
     }
+    usableFieldCount += 1;
 
     if (field instanceof HTMLInputElement && field.type.toLowerCase() === "file") {
       if (resumeFile && !resumeUploaded) {
@@ -105,9 +127,12 @@ async function applyPacket(packet, resumeFile) {
   const unresolvedRequired = collectUnresolvedRequiredFields();
   return {
     filledFieldCount,
+    detectedFieldCount,
+    usableFieldCount,
     resumeUploaded,
     unresolvedCount: unresolvedRequired.length,
     unresolvedRequired,
+    frameUrl: window.location.href,
   };
 }
 

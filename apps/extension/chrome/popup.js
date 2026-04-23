@@ -24,23 +24,42 @@ fillCurrentTabButton.addEventListener("click", async () => {
     return;
   }
 
-  const message = {
-    type: "JOBHUNTER_AUTOFILL_CURRENT_TAB",
+  const response = await chrome.runtime.sendMessage({
+    type: "JOBHUNTER_AUTOFILL_TAB",
+    tabId: activeTab.id,
     applicationId: (applicationIdInput.value || "").trim(),
     refreshMaterials: Boolean(refreshMaterialsInput.checked),
-  };
-  const response = await chrome.tabs.sendMessage(activeTab.id, message).catch(() => null);
+    pageUrl: activeTab.url || "",
+  }).catch(() => null);
+
   if (!response?.ok) {
     setStatus(response?.error || "Autofill failed on this tab.");
     return;
   }
 
+  const filledFieldCount = Number(response.filledFieldCount || 0);
+  const usableFieldCount = Number(response.usableFieldCount || 0);
+  const frameHost = getHostLabel(response.frameUrl);
+
+  if (filledFieldCount === 0 && !response.resumeUploaded) {
+    const details = [
+      "No fields filled",
+      `${usableFieldCount} inputs detected`,
+      frameHost ? `frame ${frameHost}` : "",
+    ].filter(Boolean);
+    setStatus(details.join(" | "));
+    return;
+  }
+
   const details = [
-    `${response.filledFieldCount || 0} fields`,
+    `${filledFieldCount} fields`,
     response.resumeUploaded ? "resume uploaded" : "resume upload pending",
   ];
   if (response.unresolvedCount > 0) {
     details.push(`${response.unresolvedCount} unresolved`);
+  }
+  if (frameHost) {
+    details.push(`frame ${frameHost}`);
   }
   setStatus(`Done: ${details.join(" | ")}`);
 });
@@ -71,6 +90,17 @@ function saveConfig() {
     token: (tokenInput.value || "").trim(),
     refreshMaterials: Boolean(refreshMaterialsInput.checked),
   });
+}
+
+function getHostLabel(frameUrl) {
+  try {
+    if (!frameUrl) {
+      return "";
+    }
+    return new URL(frameUrl).host;
+  } catch {
+    return "";
+  }
 }
 
 function setStatus(message) {

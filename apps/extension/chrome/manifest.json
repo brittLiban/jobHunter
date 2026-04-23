@@ -5,7 +5,8 @@
   "description": "Fills job application forms in your browser tab using JobHunter prepared packets.",
   "permissions": [
     "storage",
-    "tabs"
+    "tabs",
+    "webNavigation"
   ],
   "host_permissions": [
     "http://localhost:3000/*",
@@ -28,7 +29,9 @@
       "js": [
         "content-script.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ]
 }
