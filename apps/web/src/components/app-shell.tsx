@@ -54,6 +54,10 @@ export function AppShell({
               <strong>Live Greenhouse</strong>
               <span>Playwright runs the live form, then reopens the page it reached or records a confirmed submit.</span>
             </div>
+            <div className="sidebar-step">
+              <strong>Extension in-tab</strong>
+              <span>Use Open for extension autofill to fill forms in your own browser session, then submit manually.</span>
+            </div>
           </div>
         </div>
         <form action="/api/auth/logout" method="post" className="sidebar-logout">

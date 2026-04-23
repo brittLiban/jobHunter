@@ -20,6 +20,8 @@ Current operational defaults are intentionally conservative:
 
 That means the worker can still discover, score, tailor, and prepare applications without background autonomous submission by default, while user-triggered live Greenhouse autofill remains available in the UI. Local mock apply pages are still allowed so the full visible autofill and submit loop can be verified safely in Docker.
 
+For real employer pages where you want fill to happen in your own browser session, use extension mode.
+
 The system must pause rather than bypass:
 
 - CAPTCHA
@@ -89,6 +91,7 @@ After the worker prepares applications:
 
 - use `Open browser autofill` to start the visible local mock flow
 - use `Run live autofill` to start Playwright on a supported Greenhouse application
+- use `Open for extension autofill` to open a live page with extension hint parameters (`jhApplicationId`, `jhRefresh=1`)
 - use `Open application only` when you want to inspect the employer page yourself without triggering automation
 - if the flow pauses, use `Open paused page` to continue from the latest captured page
 - if the rolling 24-hour target is full, matched jobs stay queued until capacity opens instead of generating more tailored artifacts
@@ -110,6 +113,17 @@ Live supported ATS behavior is different:
 - unresolved required questions can be saved in the queue so the next retry reuses those answers
 - unresolved required questions can preload a conservative AI suggestion in the queue when confidence is high and no guessing is required
 - if the flow pauses on friction, the application moves into `Needs attention`
+
+Extension mode:
+
+- install from `apps/extension/chrome` via `chrome://extensions` (Developer Mode)
+- create an extension token in Settings
+- paste base URL + token into extension popup
+- open queue item with `Open for extension autofill`
+- extension fills in-tab using prepared packet, and manual submit remains with you
+- refresh-mode is on by default so tailored resume/answers can be regenerated per job
+- semantic cache still suppresses repeated equivalent LLM calls
+- saved unresolved required answers from queue overrides are reused by extension fill
 
 ### Run the worker once
 
@@ -223,6 +237,7 @@ The dashboard intent is:
 
 - `Open browser autofill`: start the visible local mock automation flow
 - `Run live autofill`: start live Greenhouse automation
+- `Open for extension autofill`: open in your own tab for extension-driven autofill
 - `Open application only`: open the employer page without automation
 - `Open paused page`: reopen the last page reached by automation
 

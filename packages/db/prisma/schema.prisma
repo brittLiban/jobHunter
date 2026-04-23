@@ -141,6 +141,7 @@ model User {
   applications           Application[]
   notifications          Notification[]
   promptTemplates        PromptTemplate[]
+  extensionTokens        ExtensionToken[]
 }
 
 model UserAccount {
@@ -443,4 +444,20 @@ model PromptTemplate {
   source      JobSource?          @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   @@index([taskKind, isActive])
+}
+
+model ExtensionToken {
+  id          String    @id @default(cuid())
+  userId      String
+  label       String
+  tokenHash   String    @unique
+  tokenPrefix String
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, createdAt])
 }

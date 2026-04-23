@@ -239,6 +239,16 @@ export default async function ApplicationsPage({
               <div className="review-action-row">
                 {renderAutofillAction(focusedApplication)}
                 {focusedApplication.applyUrl ? (
+                  <a
+                    href={buildExtensionAutofillUrl(focusedApplication.applyUrl, focusedApplication.id)}
+                    className="button button-primary"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open for extension autofill
+                  </a>
+                ) : null}
+                {focusedApplication.applyUrl ? (
                   <a href={focusedApplication.applyUrl} className="button button-secondary" target="_blank" rel="noreferrer">
                     Open application only
                   </a>
@@ -534,6 +544,18 @@ function buildFocusHref(params: ApplicationsPageParams, focus: string) {
   }
   next.set("focus", focus);
   return `/applications?${next.toString()}`;
+}
+
+function buildExtensionAutofillUrl(targetUrl: string, applicationId: string) {
+  try {
+    const parsed = new URL(targetUrl);
+    parsed.searchParams.set("jhApplicationId", applicationId);
+    parsed.searchParams.set("jhRefresh", "1");
+    return parsed.toString();
+  } catch {
+    const joiner = targetUrl.includes("?") ? "&" : "?";
+    return `${targetUrl}${joiner}jhApplicationId=${encodeURIComponent(applicationId)}&jhRefresh=1`;
+  }
 }
 
 function capitalize(value: string) {

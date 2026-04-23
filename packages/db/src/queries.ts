@@ -198,6 +198,88 @@ export async function getApplicationAutomationContext(userId: string, applicatio
   });
 }
 
+export async function findApplicationAutomationContextByUrl(userId: string, targetUrl: string) {
+  const target = parseComparableUrl(targetUrl);
+  if (!target) {
+    return null;
+  }
+
+  const candidates = await prisma.application.findMany({
+    where: {
+      userId,
+      status: {
+        in: ["PREPARED", "NEEDS_USER_ACTION", "QUEUED"],
+      },
+    },
+    include: {
+      user: {
+        include: {
+          profile: true,
+          preferences: true,
+        },
+      },
+      job: {
+        include: {
+          source: true,
+        },
+      },
+      resume: true,
+      generatedAnswers: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      tailoredDocuments: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    take: 120,
+  });
+
+  for (const candidate of candidates) {
+    const urls = [
+      candidate.job.applyUrl,
+      candidate.job.canonicalUrl,
+      candidate.lastAutomationUrl,
+    ];
+    const exact = urls
+      .map(parseComparableUrl)
+      .filter((value): value is ComparableUrl => value !== null)
+      .some((value) => value.host === target.host && value.path === target.path);
+    if (exact) {
+      return candidate;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const urls = [
+      candidate.job.applyUrl,
+      candidate.job.canonicalUrl,
+      candidate.lastAutomationUrl,
+    ];
+    const loose = urls
+      .map(parseComparableUrl)
+      .filter((value): value is ComparableUrl => value !== null)
+      .some((value) =>
+        value.host === target.host
+        && (
+          value.path.includes(target.path)
+          || target.path.includes(value.path)
+        ),
+      );
+    if (loose) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 export async function getNotificationsForUser(userId: string) {
   const notifications = await prisma.notification.findMany({
     where: { userId },
@@ -633,6 +715,85 @@ export async function markNotificationRead(userId: string, notificationId: strin
   });
 }
 
+export async function createExtensionTokenForUser(input: {
+  userId: string;
+  label: string;
+  tokenHash: string;
+  tokenPrefix: string;
+  expiresAt?: Date | null;
+}) {
+  return prisma.extensionToken.create({
+    data: {
+      userId: input.userId,
+      label: input.label,
+      tokenHash: input.tokenHash,
+      tokenPrefix: input.tokenPrefix,
+      expiresAt: input.expiresAt ?? null,
+    },
+  });
+}
+
+export async function listExtensionTokensForUser(userId: string) {
+  return prisma.extensionToken.findMany({
+    where: {
+      userId,
+      revokedAt: null,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
+
+export async function revokeExtensionTokenForUser(input: { userId: string; tokenId: string }) {
+  const existing = await prisma.extensionToken.findFirst({
+    where: {
+      id: input.tokenId,
+      userId: input.userId,
+      revokedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!existing) {
+    return null;
+  }
+
+  return prisma.extensionToken.update({
+    where: { id: input.tokenId },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+}
+
+export async function resolveExtensionToken(tokenHash: string) {
+  const now = new Date();
+  const token = await prisma.extensionToken.findFirst({
+    where: {
+      tokenHash,
+      revokedAt: null,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: now } },
+      ],
+    },
+    include: {
+      user: true,
+    },
+  });
+  if (!token) {
+    return null;
+  }
+
+  await prisma.extensionToken.update({
+    where: { id: token.id },
+    data: {
+      lastUsedAt: now,
+    },
+  });
+  return token;
+}
+
 function toPrismaWorkMode(mode: JobPreferences["workModes"][number]) {
   switch (mode) {
     case "remote":
@@ -681,6 +842,35 @@ function toPrismaJobSourceKind(kind: JobPreferences["sourceKinds"][number]) {
 
 function normalizeFieldOverrideKey(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+type ComparableUrl = {
+  host: string;
+  path: string;
+};
+
+function parseComparableUrl(value: string | null | undefined): ComparableUrl | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = new URL(value);
+    return {
+      host: parsed.host.toLowerCase(),
+      path: normalizeComparablePath(parsed.pathname),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeComparablePath(pathname: string) {
+  const trimmed = pathname.trim().toLowerCase();
+  if (!trimmed) {
+    return "/";
+  }
+  const withoutTrailing = trimmed.replace(/\/+$/, "");
+  return withoutTrailing || "/";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

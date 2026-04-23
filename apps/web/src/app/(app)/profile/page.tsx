@@ -1,6 +1,8 @@
 import { AppShell } from "@/components/app-shell";
+import { ExtensionTokenManager } from "@/components/extension-token-manager";
 import { requireOnboardedUser } from "@/lib/auth";
 import { loadProfilePageData } from "@/lib/page-data";
+import { listExtensionTokensForUser } from "@jobhunter/db";
 
 const workModeOptions = [
   { value: "remote", label: "Remote" },
@@ -30,6 +32,7 @@ function listValue(value: string[] | undefined) {
 export default async function ProfilePage() {
   const user = await requireOnboardedUser();
   const bundle = await loadProfilePageData(user.id);
+  const extensionTokens = await listExtensionTokensForUser(user.id);
   const selectedWorkModes = new Set(
     bundle?.preferences.workModes && bundle.preferences.workModes.length > 0
       ? bundle.preferences.workModes
@@ -159,6 +162,45 @@ export default async function ProfilePage() {
             Save settings
           </button>
         </form>
+      </section>
+
+      <section className="app-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Extension Autofill</p>
+            <h2>In-browser live fill mode</h2>
+          </div>
+        </div>
+        <p className="section-copy">
+          Use the browser extension when you want the form filled in your own tab, then submit manually yourself.
+          This avoids worker-session mismatch on third-party sites.
+        </p>
+        <div className="stack-list">
+          <div className="stack-item">
+            <p>Install location</p>
+            <span>
+              Extension source files live at <code>apps/extension/chrome</code>.
+              Load it in Chrome via <code>chrome://extensions</code> with Developer Mode enabled.
+            </span>
+          </div>
+          <div className="stack-item">
+            <p>Usage</p>
+            <span>1. Create a token below and paste it into the extension popup once.</span>
+            <span>2. From Review Queue, click Open for extension autofill.</span>
+            <span>3. The extension fills fields in your browser tab and you submit manually.</span>
+          </div>
+        </div>
+
+        <ExtensionTokenManager
+          initialTokens={extensionTokens.map((token) => ({
+            id: token.id,
+            label: token.label,
+            tokenPrefix: token.tokenPrefix,
+            createdAt: token.createdAt.toISOString(),
+            lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
+            expiresAt: token.expiresAt?.toISOString() ?? null,
+          }))}
+        />
       </section>
     </AppShell>
   );

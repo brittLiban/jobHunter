@@ -49,6 +49,10 @@
    - Queue users can now save unresolved required answers per application and reuse them on the next live autofill retry
    - Needs-attention rows now preload conservative LLM suggestions for unresolved required answers when confidence is high
    - Greenhouse submit detection now covers broader submit/apply control patterns to reduce false ambiguous pauses
+   - Browser extension MVP now supports in-tab autofill with token-auth packet fetch and manual submit handoff
+   - Queue actions now include Open for extension autofill to launch live pages with extension hint ids
+   - Extension autofill now consumes saved unresolved field overrides and stronger field heuristics (`label` + `name` + `id` + `autocomplete`)
+   - Extension open links now pass `jhRefresh=1`, and extension refresh mode is enabled by default with semantic cache backing
 
 ## Remaining Work
 
@@ -73,8 +77,8 @@
    - Add screenshots/placeholders or real product imagery to the landing page
 
 5. Extension readiness
-   - Formalize backend APIs for future extension consumption
-   - Add token-based machine access paths separate from browser sessions
+   - Add richer extension-side field mapping for more ATS variants
+   - Add robust extension telemetry and per-site compatibility diagnostics
 
 6. Quality
    - Add integration tests for auth, onboarding, worker persistence, and automation checkpoints

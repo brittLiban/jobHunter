@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JobHunter Autofill</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <h1>JobHunter Autofill</h1>
+      <p class="hint">Fill the current page using your prepared JobHunter packet.</p>
+
+      <label class="field">
+        <span>API Base URL</span>
+        <input id="baseUrl" placeholder="http://localhost:3000" />
+      </label>
+
+      <label class="field">
+        <span>Extension Token</span>
+        <input id="token" placeholder="jhx_..." />
+      </label>
+
+      <label class="field">
+        <span>Application ID (optional)</span>
+        <input id="applicationId" placeholder="cmo..." />
+      </label>
+
+      <label class="checkbox">
+        <input id="refreshMaterials" type="checkbox" checked />
+        <span>Refresh tailored resume + answers before filling</span>
+      </label>
+
+      <div class="actions">
+        <button id="saveConfig" type="button">Save config</button>
+        <button id="fillCurrentTab" type="button" class="primary">Autofill current tab</button>
+      </div>
+
+      <p id="status" class="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+  </html>

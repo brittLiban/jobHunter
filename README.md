@@ -34,6 +34,7 @@ Implemented in the TypeScript stack:
 - worker pipeline that discovers jobs, scores fit, prepares applications, tracks events, and raises notifications
 - Playwright autofill flows for Greenhouse and the local mock apply pages
 - hosted Greenhouse iframe support for company-owned job pages such as Stripe
+- browser extension mode for in-tab autofill on real application pages (manual submit flow)
 - LLM-assisted field resolution with semantic cache persistence for unfamiliar field labels
 - normalized LLM request caching for seniority classification, scoring, resume tailoring, and short-answer generation
 - manual-action workflow with prepared payload persistence, saved resume points, and resume/reopen support
@@ -41,6 +42,7 @@ Implemented in the TypeScript stack:
 - needs-attention screens now let users save an answer for unresolved required questions and reuse it on retry
 - unresolved required questions now support conservative LLM answer suggestions, prefilled in the queue only when confidence is high
 - live Greenhouse submission detection now checks broader submit/apply control patterns to reduce false ambiguous pauses
+- extension token management and extension packet APIs for browser-session autofill
 - browser-visible mock autofill handoff that opens the local apply page, fills it from the prepared packet, and records the confirmation back into the tracker
 - rolling 24-hour daily target enforcement that queues overflow jobs before tailoring work is generated
 - application-state reconciliation so worker reruns preserve submitted and paused items instead of downgrading them
@@ -55,6 +57,7 @@ Validated locally on April 22, 2026:
 - the live queue rendered `Run live autofill` actions for supported Greenhouse applications
 - a live Stripe-hosted Greenhouse application opened the real employer form, uploaded the resume, autofilled 20 fields, and paused only on CAPTCHA plus one unresolved prior-employment question
 - unresolved prior-employment questions correctly remain unsuggested when the LLM layer cannot answer without guessing
+- extension packet endpoints returned prepared defaults, generated answers, and resume file bytes via token auth for in-tab fills
 - the jobs page filtered the feed down to a Greater Seattle area slice
 - a clean bootstrap account using a real local resume produced a Seattle-area Greenhouse job targeted to the current filters
 
@@ -72,6 +75,7 @@ Still intentionally incomplete:
 apps/
   web/        Next.js marketing site, authenticated app, and API routes
   worker/     ingestion, scoring, tailoring, preparation, and automation pipeline
+  extension/  browser extension source for in-tab autofill mode
 
 packages/
   core/       shared domain types, API contracts, rules, and autofill helpers
@@ -165,12 +169,15 @@ Important behavior:
 - if a job falls outside those discovery controls, it is dropped before it reaches the review queue
 - `Open browser autofill` is the action that starts the local visible mock flow
 - `Run live autofill` starts Playwright on a supported Greenhouse application
+- `Open for extension autofill` opens the live page in your tab with extension hint params (`jhApplicationId` and `jhRefresh=1`)
 - `Open application only` opens the employer page directly and does not trigger automation by itself
 - on local mock flows, `Open browser autofill` redirects into the mock application page and visibly fills the form in-browser
 - on supported live ATS flows, `Run live autofill` runs the worker-side automation and then opens the step it reached
 - when a live ATS run pauses, the queue now shows how many fields were autofilled and names any remaining required questions that still need the user
 - unresolved required questions can be saved directly from the queue and reused automatically on the next live autofill run
 - unresolved required questions can now also load AI-suggested answers directly into the queue input when the suggestion is safe and high-confidence
+- extension autofill refreshes tailored resume bullets and short answers before filling (semantic cache limits repeat token spend)
+- extension autofill now reuses saved unresolved field overrides from the queue when labels match
 - the Jobs and Applications pages both support search, status filtering, and location presets including `Greater Seattle Area`
 
 ## Application Actions
@@ -179,11 +186,14 @@ The authenticated queue now uses explicit action labels so the intent is obvious
 
 - `Open browser autofill`: start the visible local mock autofill flow
 - `Run live autofill`: start live Playwright automation for a supported Greenhouse flow
+- `Open for extension autofill`: open the target page in your browser tab for extension-driven fill
 - `Open application only`: open the employer form without triggering automation
 - `Open paused page`: reopen the last page reached by automation after it paused for human input
 - `Mark submitted`: manually confirm completion if you finished the application yourself
 
 The most important distinction is that `Ready to run` means the packet is prepared in JobHunter, but the employer site is not complete yet. `Submitted` means the system or the user confirmed a real completion state.
+
+If you want the exact "open in my browser and fill there" experience for live sites, use extension mode.
 
 ## Local Development
 
@@ -200,6 +210,11 @@ If the stack is already running and you want the latest code live after local ch
 ```powershell
 docker compose up -d --build web worker
 ```
+
+Extension source for local loading:
+
+- `apps/extension/chrome` (Chrome Manifest V3)
+- quick guide: `apps/extension/README.md`
 
 If you want a truly clean local database before retesting discovery:
 
@@ -342,6 +357,7 @@ Current behavior a user should know before relying on the system:
 - local Mock and Greenhouse are the only implemented autofill paths today
 - live Greenhouse autofill is enabled in the Docker stack by default, but other ATS flows remain unsupported
 - live ATS autofill runs in the worker browser session, so a reopened employer page may still require human confirmation in a fresh browser session
+- extension mode fills in your own tab/session and is the recommended path when you want manual final submit on real sites
 - if no LLM provider is configured, the pipeline uses deterministic mock output rather than live model calls
 - the worker currently runs on demand rather than from a production queue or scheduler
 
