@@ -53,6 +53,7 @@
    - Queue actions now include Open for extension autofill to launch live pages with extension hint ids
    - Extension autofill now consumes saved unresolved field overrides and stronger field heuristics (`label` + `name` + `id` + `autocomplete`)
    - Extension open links now pass `jhRefresh=1`, and extension refresh mode is enabled by default with semantic cache backing
+   - Extension engine now autofills across embedded frames and open shadow DOM roots, with safer zero-fill diagnostics in popup status
 
 ## Remaining Work
 

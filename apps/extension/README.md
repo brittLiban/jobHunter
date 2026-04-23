@@ -43,9 +43,12 @@ Option B:
 
 ## Notes
 
-- Resume upload is attempted in-tab via file input assignment.
+- Autofill runs across embedded application frames (for hosted ATS embeds like Greenhouse-in-company-page).
+- Form fields are discovered across open shadow roots, not only flat DOM.
+- Resume upload is attempted in-tab via file input assignment and attach/upload button reveal pass.
 - If upload is blocked by site controls, upload manually.
 - CAPTCHA and verification prompts are not bypassed.
 - **Refresh tailored resume + answers** is enabled by default so each fill can use job-specific material.
 - LLM refresh requests are semantically cached in `data/cache/llm-semantic-cache.json` to avoid repeated token spend for equivalent inputs.
 - Saved unresolved-answer overrides from JobHunter are reused by extension autofill when labels match.
+- Popup status now reports no-fill cases explicitly instead of showing a false successful done state.
