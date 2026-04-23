@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     }, { status: 404 }));
   }
 
-  const appBaseUrl = `${url.protocol}//${url.host}`;
+  const appBaseUrl = normalizeLoopbackOrigin(`${url.protocol}//${url.host}`);
   const packet = await buildExtensionAutofillPacket({
     context,
     appBaseUrl,
@@ -60,6 +60,18 @@ function parseBoolean(value: string | null) {
     return false;
   }
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function normalizeLoopbackOrigin(origin: string) {
+  try {
+    const parsed = new URL(origin);
+    if (parsed.hostname === "0.0.0.0") {
+      parsed.hostname = "localhost";
+    }
+    return `${parsed.protocol}//${parsed.host}`.replace(/\/$/, "");
+  } catch {
+    return origin;
+  }
 }
 
 const extensionCorsHeaders = {

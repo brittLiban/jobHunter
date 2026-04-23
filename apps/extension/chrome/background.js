@@ -45,8 +45,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const packet = await packetResponse.json();
 
       let resumeFile = null;
-      if (packet?.resume?.fileUrl) {
-        const resumeResponse = await fetchWithLocalhostFallback(packet.resume.fileUrl, {
+      const resumeUrl = resolveApiUrl(packet?.resume?.fileUrl, config.baseUrl);
+      if (resumeUrl) {
+        const resumeResponse = await fetchWithLocalhostFallback(resumeUrl, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${config.token}`,
@@ -133,6 +134,9 @@ function normalizeBaseUrl(value) {
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
   try {
     const parsed = new URL(withProtocol);
+    if (parsed.hostname === "0.0.0.0") {
+      parsed.hostname = "127.0.0.1";
+    }
     return `${parsed.protocol}//${parsed.host}`.replace(/\/$/, "");
   } catch {
     return DEFAULT_BASE_URL;
@@ -159,7 +163,8 @@ async function fetchWithLocalhostFallback(url, options) {
 function toLoopbackFallbackUrl(url) {
   try {
     const parsed = new URL(url);
-    if (parsed.hostname.toLowerCase() !== "localhost") {
+    const host = parsed.hostname.toLowerCase();
+    if (host !== "localhost" && host !== "0.0.0.0") {
       return null;
     }
     parsed.hostname = "127.0.0.1";
@@ -180,6 +185,24 @@ function buildNetworkError(error, primaryUrl, fallbackUrl) {
   }
   parts.push("Verify http://localhost:3000 is running and extension site access is allowed.");
   return new Error(parts.join(" "));
+}
+
+function resolveApiUrl(rawUrl, baseUrl) {
+  const candidate = typeof rawUrl === "string" ? rawUrl.trim() : "";
+  if (!candidate) {
+    return "";
+  }
+
+  const base = normalizeBaseUrl(baseUrl || DEFAULT_BASE_URL);
+  try {
+    const parsed = new URL(candidate, `${base}/`);
+    if (parsed.hostname === "0.0.0.0") {
+      parsed.hostname = "127.0.0.1";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
 }
 
 function toHumanErrorMessage(error) {
