@@ -43,6 +43,20 @@ export async function discoverJobsForTargets(targets: SourceDiscoveryTarget[]): 
 }
 
 export function buildDefaultSourceTargetsFromEnv(): SourceDiscoveryTarget[] {
+  return buildSourceTargetsFromBoards({
+    greenhouse: parseList(process.env.JOBHUNTER_GREENHOUSE_BOARDS, ["stripe", "figma", "anthropic", "openai", "notion"]),
+    ashby: parseList(process.env.JOBHUNTER_ASHBY_BOARDS, ["vercel", "retool", "linear", "raycast"]),
+    lever: parseList(process.env.JOBHUNTER_LEVER_SITES, ["box", "perplexity"]),
+    workable: parseList(process.env.JOBHUNTER_WORKABLE_COMPANIES, []),
+  });
+}
+
+export function buildSourceTargetsFromBoards(boards: {
+  greenhouse: string[];
+  ashby: string[];
+  lever: string[];
+  workable: string[];
+}): SourceDiscoveryTarget[] {
   const targets: SourceDiscoveryTarget[] = [
     {
       kind: "mock",
@@ -52,25 +66,22 @@ export function buildDefaultSourceTargetsFromEnv(): SourceDiscoveryTarget[] {
     {
       kind: "greenhouse",
       sourceName: "Greenhouse",
-      identifiers: parseList(process.env.JOBHUNTER_GREENHOUSE_BOARDS, ["stripe", "figma"]).map((slug) => ({ slug })),
+      identifiers: boards.greenhouse.map((slug) => ({ slug })),
     },
     {
       kind: "ashby",
       sourceName: "Ashby",
-      identifiers: parseList(process.env.JOBHUNTER_ASHBY_BOARDS, ["vercel", "retool"]).map((slug) => ({ slug })),
+      identifiers: boards.ashby.map((slug) => ({ slug })),
     },
     {
       kind: "lever",
       sourceName: "Lever",
-      identifiers: parseList(process.env.JOBHUNTER_LEVER_SITES, ["box"]).map((slug) => ({ slug })),
+      identifiers: boards.lever.map((slug) => ({ slug })),
     },
     {
       kind: "workable",
       sourceName: "Workable",
-      identifiers: parseList(process.env.JOBHUNTER_WORKABLE_COMPANIES, []).map((slug) => ({
-        slug,
-        companyName: slug,
-      })),
+      identifiers: boards.workable.map((slug) => ({ slug, companyName: slug })),
     },
   ];
 

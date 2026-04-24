@@ -1,4 +1,28 @@
 services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "qwen2.5:7b"]
+    restart: "no"
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -31,8 +55,10 @@ services:
       JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED: ${JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      OLLAMA_URL: ${OLLAMA_URL:-}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b-instruct-q4_K_M}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
     command: >
       sh -lc "npm install &&
       npm run db:generate &&
@@ -41,6 +67,8 @@ services:
       postgres:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      ollama-init:
         condition: service_completed_successfully
     ports:
       - "3000:3000"
@@ -65,8 +93,10 @@ services:
       JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED: ${JOBHUNTER_EXTERNAL_AUTOFILL_ENABLED:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      OLLAMA_URL: ${OLLAMA_URL:-}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b-instruct-q4_K_M}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
       JOBHUNTER_GREENHOUSE_BOARDS: ${JOBHUNTER_GREENHOUSE_BOARDS:-stripe,figma}
       JOBHUNTER_ASHBY_BOARDS: ${JOBHUNTER_ASHBY_BOARDS:-vercel,retool}
       JOBHUNTER_LEVER_SITES: ${JOBHUNTER_LEVER_SITES:-box}
@@ -79,6 +109,8 @@ services:
       postgres:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      ollama-init:
         condition: service_completed_successfully
     volumes:
       - .:/app
@@ -105,6 +137,7 @@ services:
 
 volumes:
   postgres_data:
+  ollama_data:
   migrate_node_modules:
   web_node_modules:
   web_next_cache:

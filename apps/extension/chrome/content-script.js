@@ -67,6 +67,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "JOBHUNTER_AUTO_SUBMIT") {
+    const submitted = tryClickSubmit();
+    sendResponse({ ok: true, submitted });
+    return false;
+  }
+
   return false;
 });
 
@@ -81,6 +87,7 @@ if (hintedApplicationId) {
         type: "JOBHUNTER_AUTOFILL_TAB",
         applicationId: hintedApplicationId,
         refreshMaterials: pageUrl.searchParams.get("jhRefresh") === "1",
+        autoSubmit: pageUrl.searchParams.get("jhAutoSubmit") === "1",
         pageUrl: window.location.href,
       }).catch(() => undefined);
     }, 650);
@@ -1079,6 +1086,30 @@ function cssEscape(value) {
     return window.CSS.escape(value);
   }
   return String(value).replace(/["\\]/g, "\\$&");
+}
+
+function tryClickSubmit() {
+  const SUBMIT_PATTERNS = ["submit application", "submit", "apply now", "apply", "send application"];
+  const SKIP_PATTERNS   = ["save", "back", "cancel", "previous", "upload", "attach", "next", "continue"];
+
+  const clickables = collectDeepElements("button[type='submit'], button, input[type='submit'], [role='button']")
+    .filter((node) => node instanceof HTMLElement && isVisible(node));
+
+  for (const node of clickables) {
+    const text = normalize(readNodeText(node));
+    if (!text) continue;
+    if (matchesAny(text, SKIP_PATTERNS)) continue;
+    if (!matchesAny(text, SUBMIT_PATTERNS)) continue;
+
+    // Confirm at least one required field looks filled before submitting
+    const unresolved = collectUnresolvedRequiredFieldsDeep();
+    if (unresolved.length > 0) return false;
+
+    node.click();
+    return true;
+  }
+
+  return false;
 }
 
 function delay(ms) {

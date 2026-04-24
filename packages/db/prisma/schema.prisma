@@ -208,6 +208,16 @@ model UserPreference {
   includeKeywords  String[]
   excludeKeywords  String[]
   sourceKinds      JobSourceKind[]
+  // LLM provider settings (overrides env vars when set)
+  llmProvider      String?
+  llmModel         String?
+  llmBaseUrl       String?
+  llmApiKey        String?
+  // Per-user job board lists for each ATS
+  greenhouseBoards String[]        @default([])
+  ashbyBoards      String[]        @default([])
+  leverBoards      String[]        @default([])
+  workableBoards   String[]        @default([])
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)

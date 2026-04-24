@@ -28,17 +28,20 @@ import {
   upsertDiscoveredJob,
   upsertUserScore,
 } from "@jobhunter/db";
-import { buildDefaultSourceTargetsFromEnv, discoverJobsForTargets } from "@jobhunter/job-sources";
+import { buildDefaultSourceTargetsFromEnv, buildSourceTargetsFromBoards, discoverJobsForTargets } from "@jobhunter/job-sources";
 import {
   ApplicationFieldAnswerSuggesterService,
   JobScorerService,
   JobSeniorityClassifierService,
   ResumeTailorService,
   ShortAnswerGeneratorService,
+  createLLMProviderFromConfig,
+  type LLMConfig,
 } from "@jobhunter/llm";
 
 type PipelineOptions = {
   onlyUserId?: string;
+  boardFilter?: { source: string; slug: string };
 };
 
 type ExistingApplicationSummary = Awaited<ReturnType<typeof getExistingApplicationsForUser>>[number];
@@ -65,11 +68,37 @@ export async function runPipeline(options: PipelineOptions = {}) {
       (user.preferences?.sourceKinds ?? ["MOCK", "GREENHOUSE", "ASHBY", "LEVER", "WORKABLE"]).map((kind) => kind.toLowerCase()),
     ),
   );
-  const sourceTargets = buildDefaultSourceTargetsFromEnv().filter((target) => enabledSourceKinds.has(target.kind));
-  const scorer = new JobScorerService();
+
+  // Merge per-user board lists or fall back to env-var defaults
+  const mergedBoards = mergeUserBoards(activeUsers);
+  let sourceTargets = (mergedBoards
+    ? buildSourceTargetsFromBoards(mergedBoards)
+    : buildDefaultSourceTargetsFromEnv()
+  ).filter((target) => enabledSourceKinds.has(target.kind));
+
+  // If a specific board was requested, narrow to that single target
+  if (options.boardFilter) {
+    const { source, slug } = options.boardFilter;
+    sourceTargets = sourceTargets.filter(
+      (t) => t.kind === source && t.identifiers.includes(slug),
+    );
+    // If the slug isn't in the merged list, inject it directly
+    if (sourceTargets.length === 0) {
+      sourceTargets = [{
+        kind: source as never,
+        sourceName: `${source} (${slug})`,
+        identifiers: [slug],
+      }];
+    }
+  }
+
+  // Use first active user's LLM config, falling back to env vars
+  const primaryLlmConfig = resolveUserLlmConfig(activeUsers[0]);
+  const llmProvider = createLLMProviderFromConfig(primaryLlmConfig);
+  const scorer = new JobScorerService(llmProvider);
   const seniorityClassifier = new JobSeniorityClassifierService();
-  const tailor = new ResumeTailorService();
-  const answerGenerator = new ShortAnswerGeneratorService();
+  const tailor = new ResumeTailorService(llmProvider);
+  const answerGenerator = new ShortAnswerGeneratorService(llmProvider);
 
   const sourceRecords = await Promise.all(
     sourceTargets.map((target) =>
@@ -475,6 +504,10 @@ function toJobPreferences(user: Awaited<ReturnType<typeof getOnboardedUsersForPi
     includeKeywords: user.preferences?.includeKeywords ?? [],
     excludeKeywords: user.preferences?.excludeKeywords ?? [],
     sourceKinds: (sourceKinds.length > 0 ? sourceKinds : ["greenhouse", "ashby", "lever", "workable", "mock"]) as JobPreferences["sourceKinds"],
+    greenhouseBoards: [],
+    ashbyBoards: [],
+    leverBoards: [],
+    workableBoards: [],
   };
 }
 
@@ -979,4 +1012,66 @@ function safeHostFromUrl(url: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function resolveUserLlmConfig(
+  user: Awaited<ReturnType<typeof getOnboardedUsersForPipeline>>[number] | undefined,
+): LLMConfig | null {
+  const prefs = user?.preferences as (Record<string, unknown> & {
+    llmProvider?: string | null;
+    llmModel?: string | null;
+    llmBaseUrl?: string | null;
+    llmApiKey?: string | null;
+  }) | null | undefined;
+
+  if (!prefs?.llmProvider) {
+    return null;
+  }
+
+  return {
+    provider: prefs.llmProvider as LLMConfig["provider"],
+    model: prefs.llmModel ?? undefined,
+    baseUrl: prefs.llmBaseUrl ?? undefined,
+    apiKey: prefs.llmApiKey ?? undefined,
+  };
+}
+
+function mergeUserBoards(
+  users: Awaited<ReturnType<typeof getOnboardedUsersForPipeline>>,
+): { greenhouse: string[]; ashby: string[]; lever: string[]; workable: string[] } | null {
+  const greenhouse = new Set<string>();
+  const ashby = new Set<string>();
+  const lever = new Set<string>();
+  const workable = new Set<string>();
+
+  let hasBoardConfig = false;
+
+  for (const user of users) {
+    const prefs = user.preferences as (typeof user.preferences & {
+      greenhouseBoards?: string[];
+      ashbyBoards?: string[];
+      leverBoards?: string[];
+      workableBoards?: string[];
+    }) | null | undefined;
+
+    if (!prefs) {
+      continue;
+    }
+
+    (prefs.greenhouseBoards ?? []).forEach((b) => { greenhouse.add(b); hasBoardConfig = true; });
+    (prefs.ashbyBoards ?? []).forEach((b) => { ashby.add(b); hasBoardConfig = true; });
+    (prefs.leverBoards ?? []).forEach((b) => { lever.add(b); hasBoardConfig = true; });
+    (prefs.workableBoards ?? []).forEach((b) => { workable.add(b); hasBoardConfig = true; });
+  }
+
+  if (!hasBoardConfig) {
+    return null;
+  }
+
+  return {
+    greenhouse: [...greenhouse],
+    ashby: [...ashby],
+    lever: [...lever],
+    workable: [...workable],
+  };
 }

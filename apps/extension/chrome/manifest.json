@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "JobHunter Autofill",
-  "version": "0.1.0",
-  "description": "Fills job application forms in your browser tab using JobHunter prepared packets.",
+  "version": "0.2.0",
+  "description": "Autofills job application forms, tailors your resume live, and auto-submits — powered by JobHunter.",
   "permissions": [
     "storage",
     "tabs",
-    "webNavigation"
+    "webNavigation",
+    "scripting"
   ],
   "host_permissions": [
     "http://localhost:3000/*",

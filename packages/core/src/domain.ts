@@ -68,6 +68,16 @@ export const jobPreferencesSchema = z.object({
   includeKeywords: z.array(z.string().min(1)).default([]),
   excludeKeywords: z.array(z.string().min(1)).default([]),
   sourceKinds: z.array(jobSourceKindSchema).min(1).default(["greenhouse", "ashby", "lever", "workable", "mock"]),
+  // LLM engine settings (override environment variables when provided)
+  llmProvider: z.enum(["anthropic", "openai", "ollama"]).optional(),
+  llmModel: z.string().optional(),
+  llmBaseUrl: z.string().optional(),
+  llmApiKey: z.string().optional(),
+  // Per-user job board lists
+  greenhouseBoards: z.array(z.string().min(1)).default([]),
+  ashbyBoards: z.array(z.string().min(1)).default([]),
+  leverBoards: z.array(z.string().min(1)).default([]),
+  workableBoards: z.array(z.string().min(1)).default([]),
 });
 
 export const jobPostingSchema = z.object({

@@ -60,6 +60,10 @@ export async function GET(
         application.user.preferences.sourceKinds.length > 0
           ? application.user.preferences.sourceKinds.map((kind) => kind.toLowerCase()) as Array<"mock" | "greenhouse" | "ashby" | "lever" | "workable" | "company_site" | "extension">
           : ["greenhouse", "ashby", "lever", "workable", "mock"],
+      greenhouseBoards: [],
+      ashbyBoards: [],
+      leverBoards: [],
+      workableBoards: [],
     },
     generatedAnswers: application.generatedAnswers.map((answer) => ({
       kind: answer.kind.toLowerCase() as "why_role" | "why_fit" | "anything_else" | "custom",

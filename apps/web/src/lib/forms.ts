@@ -29,6 +29,7 @@ export function preferencesFromFormData(formData: FormData): JobPreferences {
   const workModes = getMultiValueList(formData, "workModes");
   const seniorityTargets = getMultiValueList(formData, "seniorityTargets");
   const sourceKinds = getMultiValueList(formData, "sourceKinds");
+  const llmProvider = getOptionalString(formData, "llmProvider");
 
   return {
     targetRoles: splitList(getString(formData, "targetRoles")),
@@ -41,6 +42,14 @@ export function preferencesFromFormData(formData: FormData): JobPreferences {
     includeKeywords: splitList(getString(formData, "includeKeywords")),
     excludeKeywords: splitList(getString(formData, "excludeKeywords")),
     sourceKinds: (sourceKinds.length > 0 ? sourceKinds : ["greenhouse", "ashby", "lever", "workable", "mock"]) as JobPreferences["sourceKinds"],
+    llmProvider: (llmProvider as JobPreferences["llmProvider"]) ?? undefined,
+    llmModel: getOptionalString(formData, "llmModel"),
+    llmBaseUrl: getOptionalString(formData, "llmBaseUrl"),
+    llmApiKey: getOptionalString(formData, "llmApiKey"),
+    greenhouseBoards: splitList(getString(formData, "greenhouseBoards")),
+    ashbyBoards: splitList(getString(formData, "ashbyBoards")),
+    leverBoards: splitList(getString(formData, "leverBoards")),
+    workableBoards: splitList(getString(formData, "workableBoards")),
   };
 }
 

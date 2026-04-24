@@ -9,12 +9,7 @@ import {
   supportsAutofill,
 } from "@/lib/application-presentation";
 import { loadDashboardPageData } from "@/lib/page-data";
-
-type DashboardPageNotice = {
-  tone: "success" | "info";
-  title: string;
-  message: string;
-};
+import { getWorkerStatus } from "@/lib/worker-state";
 
 export default async function DashboardPage({
   searchParams,
@@ -23,332 +18,340 @@ export default async function DashboardPage({
 }) {
   const user = await requireOnboardedUser();
   const params = await searchParams;
-  const notice = buildDashboardNotice(params);
   const { overview, applications, notifications } = await loadDashboardPageData(user.id);
-  const submittedApplications = applications
-    .filter((application) => application.status === "auto_submitted" || application.status === "submitted")
-    .slice(0, 4);
-  const attentionApplications = applications
-    .filter((application) => application.status === "needs_user_action")
-    .slice(0, 4);
-  const readyApplications = applications
-    .filter((application) => application.status === "prepared")
-    .slice(0, 4);
-  const queuedApplications = applications
-    .filter((application) => application.status === "queued")
-    .slice(0, 4);
+  const workerStatus = getWorkerStatus();
+
+  const attentionApps  = applications.filter((a) => a.status === "needs_user_action").slice(0, 6);
+  const readyApps      = applications.filter((a) => a.status === "prepared").slice(0, 6);
+  const submittedApps  = applications.filter((a) => ["auto_submitted", "submitted"].includes(a.status)).slice(0, 6);
+  const queuedCount    = applications.filter((a) => a.status === "queued").length;
+
+  const successNotice = params.worker === "ran"
+    ? "Worker cycle complete — discovery, scoring, tailoring, and preparation ran for your account."
+    : null;
 
   return (
     <AppShell
       title="Overview"
-      description="Run discovery, review the queue, and see immediately what was submitted versus what still needs you."
+      description="Your live application pipeline."
       userName={user.fullName ?? user.email}
       currentPath="/dashboard"
+      scraperRunning={workerStatus.running}
+      attentionCount={attentionApps.length}
     >
-      {notice ? (
-        <section className={`app-notice app-notice-${notice.tone}`}>
+      {/* Notice */}
+      {successNotice ? (
+        <div className="notice notice-success">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 4L6 11 3 8" />
+          </svg>
           <div>
-            <p className="notice-title">{notice.title}</p>
-            <p className="notice-body">{notice.message}</p>
+            <p className="notice-title">Worker finished</p>
+            <p className="notice-body">{successNotice}</p>
           </div>
-        </section>
+        </div>
       ) : null}
 
-      <section className="app-toolbar app-card">
-        <div>
-          <p className="eyebrow">Control Center</p>
-          <h2>Operate the queue from one place</h2>
-          <p className="section-copy">
-            Local mock jobs use visible browser autofill. Live Greenhouse jobs run through Playwright and reopen the page they reached after automation finishes.
-          </p>
+      {/* ── Metrics strip ─────────────────────────────── */}
+      <div className="metrics-strip">
+        <div className="metric-card">
+          <div className="metric-label">Total Jobs</div>
+          <div className="metric-value">{overview.jobsFound}</div>
+          <div className="metric-sub">discovered</div>
         </div>
-        <div className="toolbar-actions">
-          <form action="/api/worker/run" method="post">
-            <button type="submit" className="button button-primary">
-              Run worker now
-            </button>
-          </form>
-          <a href="/jobs?locationPreset=greater_seattle" className="button button-secondary">
-            Seattle discovery
-          </a>
-          <a href="/applications" className="button button-secondary">
-            Open review queue
-          </a>
+        <div className="metric-card accent">
+          <div className="metric-label">Above Threshold</div>
+          <div className="metric-value">{overview.aboveThreshold}</div>
+          <div className="metric-sub">scored ≥ {Math.round((overview.aboveThreshold / Math.max(overview.jobsFound, 1)) * 100)}%</div>
         </div>
-      </section>
-
-      <section className="app-grid app-metrics">
-        <article className="app-card">
-          <span>Matched jobs</span>
-          <strong>{overview.jobsFound}</strong>
-        </article>
-        <article className="app-card">
-          <span>Above threshold</span>
-          <strong>{overview.aboveThreshold}</strong>
-        </article>
-        <article className="app-card">
-          <span>Ready to run</span>
-          <strong>{overview.prepared}</strong>
-        </article>
-        <article className="app-card">
-          <span>Needs attention</span>
-          <strong>{overview.needsUserAction}</strong>
-        </article>
-        <article className="app-card">
-          <span>Submitted</span>
-          <strong>{overview.submittedTotal}</strong>
-        </article>
-        <article className="app-card">
-          <span>24h prepared</span>
-          <strong>{overview.preparedInLast24Hours}/{overview.dailyTargetVolume}</strong>
-        </article>
-      </section>
-
-      <section className="panel-grid-two">
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Needs Attention</p>
-              <h2>Finish these first</h2>
-            </div>
-            <a href="/applications?status=needs_user_action" className="inline-link">
-              View all
-            </a>
+        <div className="metric-card">
+          <div className="metric-label">Ready to Run</div>
+          <div className="metric-value">{overview.prepared}</div>
+          <div className="metric-sub">prepared packets</div>
+        </div>
+        {overview.needsUserAction > 0 ? (
+          <div className="metric-card yellow">
+            <div className="metric-label">Needs Attention</div>
+            <div className="metric-value">{overview.needsUserAction}</div>
+            <div className="metric-sub">blocked apps</div>
           </div>
-          <div className="summary-list">
-            {attentionApplications.length === 0 ? (
-              <div className="summary-item">
-                <p>No application is blocked right now</p>
-                <span>The queue is clear until a site hits friction or a manual step.</span>
-              </div>
-            ) : null}
-            {attentionApplications.map((application) => {
-              const targetUrl = application.applyUrl ?? application.jobUrl;
-              const canAutofill = supportsAutofill(targetUrl);
-              const autofill = getAutofillActionSummary({
-                status: application.status,
-                targetUrl,
-              });
-              const state = describeTrackerState(application);
+        ) : (
+          <div className="metric-card">
+            <div className="metric-label">Needs Attention</div>
+            <div className="metric-value">0</div>
+            <div className="metric-sub">queue clear</div>
+          </div>
+        )}
+        <div className="metric-card green">
+          <div className="metric-label">Submitted</div>
+          <div className="metric-value">{overview.submittedTotal}</div>
+          <div className="metric-sub">confirmed</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Daily Cap</div>
+          <div className="metric-value">{overview.preparedInLast24Hours}<span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-2)" }}>/{overview.dailyTargetVolume}</span></div>
+          <div className="metric-sub">{overview.remainingDailyCapacity} remaining today</div>
+        </div>
+      </div>
 
+      {/* ── Scraper Control Panel ─────────────────────── */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header">
+          <div>
+            <div className="card-title">Scraper Control</div>
+            <div className="card-subtitle">
+              {workerStatus.running ? (
+                <span style={{ color: "var(--yellow)" }}>● Running now…</span>
+              ) : workerStatus.lastRanAt ? (
+                `Last ran ${formatTimestamp(workerStatus.lastRanAt)}`
+              ) : (
+                "Not yet run this session"
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <a href="/profile#boards" className="btn btn-secondary btn-sm">Configure boards</a>
+            <form action="/api/worker/run" method="post">
+              <button type="submit" className="btn btn-primary btn-sm">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l9 5-9 5V3z" />
+                </svg>
+                Run all sources
+              </button>
+            </form>
+          </div>
+        </div>
+        <div className="card-body-sm">
+          <ScraperBoardGrid lastResult={workerStatus.lastResult} />
+        </div>
+        {workerStatus.lastResult ? (
+          <div className="card-footer" style={{ fontSize: 12, color: "var(--text-2)", gap: 16 }}>
+            <span>Last run: <strong style={{ color: "var(--text)" }}>{workerStatus.lastResult.discoveredJobs} jobs discovered</strong></span>
+            <span>{workerStatus.lastResult.scoredApplications} scored</span>
+            <span>{workerStatus.lastResult.preparedApplications} prepared</span>
+            {workerStatus.lastResult.autoSubmittedApplications > 0 ? (
+              <span style={{ color: "var(--green)", fontWeight: 600 }}>{workerStatus.lastResult.autoSubmittedApplications} auto-submitted</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* ── Two-column action panels ───────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        {/* Needs Attention */}
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="card-title">Needs Attention</div>
+              <div className="card-subtitle">Blocked applications requiring your input</div>
+            </div>
+            <a href="/applications?status=needs_user_action" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>View all →</a>
+          </div>
+          <div className="divide-y">
+            {attentionApps.length === 0 ? (
+              <div className="empty-state">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 4L6 11 3 8" />
+                </svg>
+                <p className="empty-state-title">Queue is clear</p>
+                <p className="empty-state-body">No blocked applications right now.</p>
+              </div>
+            ) : attentionApps.map((app) => {
+              const targetUrl = app.applyUrl ?? app.jobUrl;
+              const canAutofill = supportsAutofill(targetUrl);
+              const autofill = getAutofillActionSummary({ status: app.status, targetUrl });
+              const state = describeTrackerState(app);
               return (
-                <div key={application.id} className="summary-item">
-                  <div className="summary-item-header">
-                    <div>
-                      <p>{application.company}</p>
-                      <span>{application.role}</span>
+                <div key={app.id} style={{ padding: "10px 16px" }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex-1">
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{app.company}</div>
+                      <div className="text-muted text-sm">{app.role}</div>
                     </div>
-                    <StatusPill status={application.status} />
+                    <StatusPill status={app.status} />
                   </div>
-                  <div className="meta-badges">
-                    <span className="meta-badge">{application.source}</span>
-                    <span className="meta-badge">{autofill.modeLabel}</span>
-                    <span className="meta-badge">Fit {application.fitScore}</span>
+                  <div className="flex gap-2 mt-2" style={{ flexWrap: "wrap" }}>
+                    <span className="meta-pill">{app.source}</span>
+                    <span className="meta-pill">Fit {app.fitScore}</span>
                   </div>
-                  <span>{state.detail}</span>
-                  <div className="row-links">
-                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View posting
-                    </a>
-                    {application.applyUrl ? (
-                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open application only
-                      </a>
+                  <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>{state.detail}</p>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    {canAutofill ? <AutofillLaunchForm applicationId={app.id} label={autofill.label} /> : null}
+                    <a href={app.jobUrl} className="btn btn-secondary btn-sm" target="_blank" rel="noreferrer">View posting</a>
+                    {app.lastAutomationUrl ? (
+                      <a href={app.lastAutomationUrl} className="btn btn-secondary btn-sm" target="_blank" rel="noreferrer">Open paused</a>
                     ) : null}
-                    {application.lastAutomationUrl ? (
-                      <a href={application.lastAutomationUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open paused page
-                      </a>
-                    ) : null}
-                  </div>
-                  <div className="list-actions">
-                    {canAutofill ? (
-                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
-                    ) : null}
-                    <form action={`/api/applications/${application.id}/mark-submitted`} method="post">
-                      <button type="submit" className="button button-secondary">
-                        Mark submitted
-                      </button>
-                    </form>
                   </div>
                 </div>
               );
             })}
           </div>
-        </article>
+        </div>
 
-        <article className="app-card">
-          <div className="card-heading">
+        {/* Ready to Run */}
+        <div className="card">
+          <div className="card-header">
             <div>
-              <p className="eyebrow">Ready To Run</p>
-              <h2>Prepared packets</h2>
+              <div className="card-title">Ready to Run</div>
+              <div className="card-subtitle">Prepared packets awaiting autofill</div>
             </div>
-            <a href="/applications?status=prepared" className="inline-link">
-              View all
-            </a>
+            <a href="/applications?status=prepared" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>View all →</a>
           </div>
-          <div className="summary-list">
-            {readyApplications.length === 0 ? (
-              <div className="summary-item">
-                <p>No prepared applications yet</p>
-                <span>Run the worker after onboarding and resume upload to prepare the next batch.</span>
+          <div className="divide-y">
+            {readyApps.length === 0 ? (
+              <div className="empty-state">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+                  <circle cx="8" cy="8" r="6" />
+                  <path strokeLinecap="round" d="M8 5v3l2 1" />
+                </svg>
+                <p className="empty-state-title">Nothing prepared yet</p>
+                <p className="empty-state-body">Run the scraper to discover and prepare jobs.</p>
               </div>
-            ) : null}
-            {readyApplications.map((application) => {
-              const targetUrl = application.applyUrl ?? application.jobUrl;
+            ) : readyApps.map((app) => {
+              const targetUrl = app.applyUrl ?? app.jobUrl;
               const canAutofill = supportsAutofill(targetUrl);
-              const autofill = getAutofillActionSummary({
-                status: application.status,
-                targetUrl,
-              });
-              const state = describeTrackerState(application);
-
+              const autofill = getAutofillActionSummary({ status: app.status, targetUrl });
               return (
-                <div key={application.id} className="summary-item">
-                  <div className="summary-item-header">
-                    <div>
-                      <p>{application.company}</p>
-                      <span>{application.role}</span>
+                <div key={app.id} style={{ padding: "10px 16px" }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex-1">
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{app.company}</div>
+                      <div className="text-muted text-sm">{app.role}</div>
                     </div>
-                    <StatusPill status={application.status} />
+                    <FitBar score={app.fitScore} />
                   </div>
-                  <div className="meta-badges">
-                    <span className="meta-badge">{application.source}</span>
-                    <span className="meta-badge">{autofill.modeLabel}</span>
-                    <span className="meta-badge">Fit {application.fitScore}</span>
-                  </div>
-                  <span>{state.detail}</span>
-                  <div className="row-links">
-                    <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      View posting
-                    </a>
-                    {application.applyUrl ? (
-                      <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                        Open application only
-                      </a>
-                    ) : null}
-                  </div>
-                  <div className="list-actions">
-                    {canAutofill ? (
-                      <AutofillLaunchForm applicationId={application.id} label={autofill.label} />
-                    ) : null}
-                    <a href="/applications" className="button button-secondary">
-                      Open full queue
-                    </a>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    {canAutofill ? <AutofillLaunchForm applicationId={app.id} label={autofill.label} /> : null}
+                    <a href="/applications" className="btn btn-secondary btn-sm">Review</a>
                   </div>
                 </div>
               );
             })}
           </div>
-        </article>
-      </section>
+        </div>
+      </div>
 
-      <section className="panel-grid-two">
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Submitted</p>
-              <h2>Recently confirmed</h2>
-            </div>
-            <a href="/applications?status=submitted" className="inline-link">
-              View all
-            </a>
+      {/* ── Bottom row ───────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* Submitted */}
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">Recently Submitted</div>
+            <a href="/applications?status=submitted" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>View all →</a>
           </div>
-          <div className="summary-list">
-            {submittedApplications.length === 0 ? (
-              <div className="summary-item">
-                <p>No confirmed submissions yet</p>
-                <span>Applications only move here after a real confirmation state or a manual confirmation.</span>
+          <div className="divide-y">
+            {submittedApps.length === 0 ? (
+              <div className="empty-state">
+                <p className="empty-state-title">No submissions yet</p>
               </div>
-            ) : null}
-            {submittedApplications.map((application) => (
-              <div key={application.id} className="summary-item">
-                <div className="summary-item-header">
-                  <div>
-                    <p>{application.company}</p>
-                    <span>{application.role}</span>
+            ) : submittedApps.map((app) => (
+              <div key={app.id} style={{ padding: "10px 16px" }} className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{app.company}</div>
+                  <div className="text-muted text-sm">{app.role}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <StatusPill status={app.status} />
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 3 }}>
+                    {formatTimestamp(app.submittedAt ?? app.updatedAt)}
                   </div>
-                  <StatusPill status={application.status} />
                 </div>
-                <div className="meta-badges">
-                  <span className="meta-badge">{application.source}</span>
-                  <span className="meta-badge">Fit {application.fitScore}</span>
-                </div>
-                <span>{describeTrackerState(application).detail}</span>
-                <div className="row-links">
-                  <a href={application.jobUrl} className="inline-link" target="_blank" rel="noreferrer">
-                    View posting
-                  </a>
-                  {application.applyUrl ? (
-                    <a href={application.applyUrl} className="inline-link" target="_blank" rel="noreferrer">
-                      Open application
-                    </a>
-                  ) : null}
-                </div>
-                <p className="row-help">
-                  Submitted {formatTimestamp(application.submittedAt ?? application.updatedAt)}
-                </p>
               </div>
             ))}
           </div>
-        </article>
+        </div>
 
-        <article className="app-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Queue Health</p>
-              <h2>Queued work and alerts</h2>
-            </div>
+        {/* Activity / Queue health */}
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">Activity & Alerts</div>
           </div>
-          <div className="summary-list">
-            <div className="summary-item">
-              <p>Queued next</p>
-              <span>{queuedApplications.length === 0 ? "No backlog is waiting on a daily slot." : `${queuedApplications.length} applications are waiting for the next preparation slot.`}</span>
-              {queuedApplications.length > 0 ? (
-                <a href="/applications?status=queued" className="inline-link">
-                  Open queued applications
-                </a>
+          <div className="divide-y">
+            <div style={{ padding: "10px 16px" }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Queued jobs</div>
+              <div className="text-muted text-sm" style={{ marginTop: 2 }}>
+                {queuedCount === 0
+                  ? "No backlog — next worker run will prepare immediately."
+                  : `${queuedCount} waiting for a preparation slot.`}
+              </div>
+              {queuedCount > 0 ? (
+                <a href="/applications?status=queued" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}>View queued →</a>
               ) : null}
             </div>
             {notifications.length === 0 ? (
-              <div className="summary-item">
-                <p>No recent alerts</p>
-                <span>The worker has not produced any unread notifications.</span>
+              <div className="empty-state" style={{ padding: "16px" }}>
+                <p className="empty-state-title">No recent alerts</p>
               </div>
             ) : null}
-            {notifications.slice(0, 3).map((notification) => (
-              <div key={notification.id} className="summary-item">
-                <p>{notification.title}</p>
-                <span>{notification.message}</span>
-                <p className="row-help">{formatTimestamp(notification.createdAt)}</p>
+            {notifications.slice(0, 4).map((n) => (
+              <div key={n.id} style={{ padding: "10px 16px" }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{n.title}</div>
+                <div className="text-muted text-sm" style={{ marginTop: 2 }}>{n.message}</div>
+                <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>{formatTimestamp(n.createdAt)}</div>
               </div>
             ))}
           </div>
-        </article>
-      </section>
+        </div>
+      </div>
     </AppShell>
   );
 }
 
-function buildDashboardNotice(params: {
-  worker?: string;
-  notification?: string;
-}): DashboardPageNotice | null {
-  if (params.worker === "ran") {
-    return {
-      tone: "success",
-      title: "Worker cycle started",
-      message: "Discovery, scoring, tailoring, and preparation were triggered for your current account.",
-    };
-  }
+/* ── Sub-components ─────────────────────────────────────── */
 
-  if (params.notification === "read") {
-    return {
-      tone: "info",
-      title: "Notification updated",
-      message: "The alert was marked read and removed from your unread queue.",
-    };
-  }
+function ScraperBoardGrid({ lastResult }: { lastResult: { discoveredJobs: number } | null }) {
+  const sources = [
+    { key: "greenhouse", label: "Greenhouse", abbr: "GH", color: "#22c55e" },
+    { key: "ashby",      label: "Ashby",      abbr: "AS", color: "#6366f1" },
+    { key: "lever",      label: "Lever",      abbr: "LV", color: "#f97316" },
+    { key: "workable",   label: "Workable",   abbr: "WK", color: "#0ea5e9" },
+    { key: "mock",       label: "Mock/Demo",  abbr: "MK", color: "#a855f7" },
+  ];
 
-  return null;
+  return (
+    <div className="scraper-grid">
+      {sources.map((src) => (
+        <div key={src.key} className="scraper-board-card">
+          <div className="scraper-board-header">
+            <div className="scraper-board-name">
+              <div className="scraper-board-icon" style={{ background: `${src.color}18`, color: src.color, borderColor: `${src.color}30` }}>
+                {src.abbr}
+              </div>
+              {src.label}
+            </div>
+          </div>
+          <div className="scraper-board-meta">
+            {lastResult ? (
+              <>Last run found <strong>{lastResult.discoveredJobs}</strong> jobs total</>
+            ) : (
+              "Not yet run"
+            )}
+          </div>
+          <form action="/api/worker/run" method="post">
+            <input type="hidden" name="source" value={src.key} />
+            <button type="submit" className="scraper-run-btn">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l9 5-9 5V3z" />
+              </svg>
+              Run {src.label}
+            </button>
+          </form>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FitBar({ score }: { score: number }) {
+  const tier = score >= 80 ? "high" : score >= 60 ? "medium" : "low";
+  return (
+    <div style={{ minWidth: 90, textAlign: "right" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: tier === "high" ? "var(--green)" : tier === "medium" ? "var(--accent-hover)" : "var(--yellow)" }}>
+        {score}
+      </div>
+      <div style={{ height: 3, background: "var(--border-2)", borderRadius: 999, marginTop: 3, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${score}%`, background: tier === "high" ? "var(--green)" : tier === "medium" ? "var(--accent)" : "var(--yellow)", borderRadius: 999 }} />
+      </div>
+    </div>
+  );
 }

@@ -365,33 +365,31 @@ export async function upsertOnboardingData(
     },
   });
 
+  const prefData = {
+    targetRoles: preferences.targetRoles,
+    targetLocations: preferences.locations,
+    workModes: preferences.workModes.map(toPrismaWorkMode),
+    seniorityTargets: preferences.seniorityTargets.map(toPrismaJobSeniority),
+    salaryFloor: preferences.salaryFloor ?? null,
+    fitThreshold: preferences.fitThreshold,
+    dailyTargetVolume: preferences.dailyTargetVolume,
+    includeKeywords: preferences.includeKeywords,
+    excludeKeywords: preferences.excludeKeywords,
+    sourceKinds: preferences.sourceKinds.map(toPrismaJobSourceKind),
+    llmProvider: preferences.llmProvider ?? null,
+    llmModel: preferences.llmModel ?? null,
+    llmBaseUrl: preferences.llmBaseUrl ?? null,
+    llmApiKey: preferences.llmApiKey ?? null,
+    greenhouseBoards: preferences.greenhouseBoards ?? [],
+    ashbyBoards: preferences.ashbyBoards ?? [],
+    leverBoards: preferences.leverBoards ?? [],
+    workableBoards: preferences.workableBoards ?? [],
+  };
+
   await prisma.userPreference.upsert({
     where: { userId },
-    update: {
-      targetRoles: preferences.targetRoles,
-      targetLocations: preferences.locations,
-      workModes: preferences.workModes.map(toPrismaWorkMode),
-      seniorityTargets: preferences.seniorityTargets.map(toPrismaJobSeniority),
-      salaryFloor: preferences.salaryFloor ?? null,
-      fitThreshold: preferences.fitThreshold,
-      dailyTargetVolume: preferences.dailyTargetVolume,
-      includeKeywords: preferences.includeKeywords,
-      excludeKeywords: preferences.excludeKeywords,
-      sourceKinds: preferences.sourceKinds.map(toPrismaJobSourceKind),
-    },
-    create: {
-      userId,
-      targetRoles: preferences.targetRoles,
-      targetLocations: preferences.locations,
-      workModes: preferences.workModes.map(toPrismaWorkMode),
-      seniorityTargets: preferences.seniorityTargets.map(toPrismaJobSeniority),
-      salaryFloor: preferences.salaryFloor ?? null,
-      fitThreshold: preferences.fitThreshold,
-      dailyTargetVolume: preferences.dailyTargetVolume,
-      includeKeywords: preferences.includeKeywords,
-      excludeKeywords: preferences.excludeKeywords,
-      sourceKinds: preferences.sourceKinds.map(toPrismaJobSourceKind),
-    },
+    update: prefData,
+    create: { userId, ...prefData },
   });
 
   if (!existingUser?.onboardingCompletedAt) {

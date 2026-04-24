@@ -252,6 +252,14 @@ export function serializePreferences(preferences: UserPreference | null | undefi
         ? preferences.sourceKinds.map((kind) => kind.toLowerCase())
         : ["greenhouse", "ashby", "lever", "workable", "mock"]
     ) as JobPreferences["sourceKinds"],
+    llmProvider: (preferences.llmProvider as JobPreferences["llmProvider"]) ?? undefined,
+    llmModel: preferences.llmModel ?? undefined,
+    llmBaseUrl: preferences.llmBaseUrl ?? undefined,
+    llmApiKey: preferences.llmApiKey ?? undefined,
+    greenhouseBoards: preferences.greenhouseBoards ?? [],
+    ashbyBoards: preferences.ashbyBoards ?? [],
+    leverBoards: preferences.leverBoards ?? [],
+    workableBoards: preferences.workableBoards ?? [],
   };
 }
 

@@ -197,6 +197,10 @@ function toJobPreferences(context: AutomationContext): JobPreferences {
         ? preference.sourceKinds.map((kind) => kind.toLowerCase())
         : ["greenhouse", "ashby", "lever", "workable", "mock"]
     ) as JobPreferences["sourceKinds"],
+    greenhouseBoards: [],
+    ashbyBoards: [],
+    leverBoards: [],
+    workableBoards: [],
   };
 }
 

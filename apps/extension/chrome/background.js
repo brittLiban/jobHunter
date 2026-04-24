@@ -1,9 +1,7 @@
 const DEFAULT_BASE_URL = "http://localhost:3000";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!message || typeof message.type !== "string") {
-    return false;
-  }
+  if (!message || typeof message.type !== "string") return false;
 
   (async () => {
     try {
@@ -16,10 +14,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           pageUrl: message.pageUrl || "",
           refreshMaterials: Boolean(message.refreshMaterials),
         });
-        sendResponse({
-          ok: true,
-          ...bundle,
-        });
+        sendResponse({ ok: true, ...bundle });
         return;
       }
 
@@ -29,25 +24,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         const tabId = Number(message.tabId || sender?.tab?.id || 0);
         if (!tabId) {
-          sendResponse({
-            ok: false,
-            error: "No tab context found for autofill.",
-          });
+          sendResponse({ ok: false, error: "No tab context found for autofill." });
           return;
         }
 
         const pageUrl = message.pageUrl || await getTabUrl(tabId);
+        const applicationId = message.applicationId || "";
+        const refreshMaterials = Boolean(message.refreshMaterials);
+        const autoSubmit = Boolean(message.autoSubmit);
+
+        // Step 1: Optionally live-tailor before fetching the packet
+        if (refreshMaterials && applicationId) {
+          const tailorUrl = `${config.baseUrl || DEFAULT_BASE_URL}/api/applications/${applicationId}/live-tailor`;
+          try {
+            await fetchWithLoopbackFallback(tailorUrl, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${config.token}`,
+                "Content-Type": "application/json",
+              },
+            });
+          } catch {
+            // Non-fatal — fall through to use existing materials
+          }
+        }
+
+        // Step 2: Fetch the (now-refreshed) packet
         const bundle = await fetchPreparedPacket({
           config,
-          applicationId: message.applicationId || "",
+          applicationId,
           pageUrl: pageUrl || "",
-          refreshMaterials: Boolean(message.refreshMaterials),
+          refreshMaterials: false, // already refreshed above
         });
+
+        // Step 3: Apply across all frames
         const result = await applyPacketAcrossFrames({
           tabId,
           packet: bundle.packet,
           resumeFile: bundle.resumeFile,
+          autoSubmit,
         });
+
         sendResponse(result);
         return;
       }
@@ -57,6 +74,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           baseUrl: normalizeBaseUrl(message.baseUrl || DEFAULT_BASE_URL),
           token: message.token || "",
           refreshMaterials: typeof message.refreshMaterials === "boolean" ? message.refreshMaterials : true,
+          autoSubmit: typeof message.autoSubmit === "boolean" ? message.autoSubmit : false,
         });
         sendResponse({ ok: true });
         return;
@@ -64,16 +82,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       if (message.type === "JOBHUNTER_READ_CONFIG") {
         const config = await readConfig();
-        sendResponse({
-          ok: true,
-          config,
-        });
+        sendResponse({ ok: true, config });
       }
     } catch (error) {
-      sendResponse({
-        ok: false,
-        error: toHumanErrorMessage(error),
-      });
+      sendResponse({ ok: false, error: toHumanErrorMessage(error) });
     }
   })();
 
@@ -82,52 +94,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function fetchPreparedPacket(input) {
   const params = new URLSearchParams();
-  if (input.applicationId) {
-    params.set("applicationId", String(input.applicationId));
-  }
-  if (input.pageUrl) {
-    params.set("pageUrl", String(input.pageUrl));
-  }
-  if (input.refreshMaterials) {
-    params.set("refresh", "1");
-  }
+  if (input.applicationId) params.set("applicationId", String(input.applicationId));
+  if (input.pageUrl)       params.set("pageUrl", String(input.pageUrl));
 
   const packetUrl = `${input.config.baseUrl || DEFAULT_BASE_URL}/api/extension/autofill-packet?${params.toString()}`;
   const packetResponse = await fetchWithLoopbackFallback(packetUrl, {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${input.config.token}`,
-    },
+    headers: { Authorization: `Bearer ${input.config.token}` },
   });
+
   if (!packetResponse.ok) {
     const text = await packetResponse.text();
     throw new Error(text || `Packet request failed (${packetResponse.status}).`);
   }
 
   const packet = await packetResponse.json();
+
   let resumeFile = null;
   const resumeUrl = resolveApiUrl(packet?.resume?.fileUrl, input.config.baseUrl);
   if (resumeUrl) {
-    const resumeResponse = await fetchWithLoopbackFallback(resumeUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${input.config.token}`,
-      },
-    });
-    if (resumeResponse.ok) {
-      const blob = await resumeResponse.blob();
-      resumeFile = {
-        name: packet.resume.originalFileName || "resume",
-        mimeType: packet.resume.mimeType || blob.type || "application/octet-stream",
-        base64: await blobToBase64(blob),
-      };
+    try {
+      const resumeResponse = await fetchWithLoopbackFallback(resumeUrl, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${input.config.token}` },
+      });
+      if (resumeResponse.ok) {
+        const blob = await resumeResponse.blob();
+        resumeFile = {
+          name:     packet.resume.originalFileName || "resume",
+          mimeType: packet.resume.mimeType || blob.type || "application/octet-stream",
+          base64:   await blobToBase64(blob),
+        };
+      }
+    } catch {
+      // Non-fatal — proceed without resume file
     }
   }
 
-  return {
-    packet,
-    resumeFile,
-  };
+  return { packet, resumeFile };
 }
 
 async function applyPacketAcrossFrames(input) {
@@ -140,23 +144,21 @@ async function applyPacketAcrossFrames(input) {
       packet: input.packet,
       resumeFile: input.resumeFile,
     });
+
     if (!response.ok) {
-      attempts.push({
-        ok: false,
-        frameUrl: frame.url,
-        error: response.error,
-      });
+      attempts.push({ ok: false, frameUrl: frame.url, error: response.error });
       continue;
     }
+
     attempts.push({
       ok: true,
       frameUrl: response.frameUrl || frame.url || "",
       filledFieldCount: Number(response.filledFieldCount || 0),
-      resumeUploaded: Boolean(response.resumeUploaded),
-      unresolvedCount: Number(response.unresolvedCount || 0),
+      resumeUploaded:   Boolean(response.resumeUploaded),
+      unresolvedCount:  Number(response.unresolvedCount || 0),
       unresolvedRequired: Array.isArray(response.unresolvedRequired) ? response.unresolvedRequired : [],
       detectedFieldCount: Number(response.detectedFieldCount || 0),
-      usableFieldCount: Number(response.usableFieldCount || 0),
+      usableFieldCount:   Number(response.usableFieldCount || 0),
     });
   }
 
@@ -165,20 +167,35 @@ async function applyPacketAcrossFrames(input) {
     const firstError = attempts.find((item) => !item.ok && item.error)?.error;
     return {
       ok: false,
-      error: firstError || "No fillable extension frame responded. Reload the extension and page, then retry.",
+      error: firstError || "No fillable frame responded. Reload the page and retry.",
     };
   }
 
   const best = selectBestResult(success);
-  return {
-    ok: true,
-    ...best,
-  };
+
+  // Step 4: Auto-submit if requested and fill was successful
+  let submitted = false;
+  if (input.autoSubmit && best.filledFieldCount > 0) {
+    submitted = await tryAutoSubmitFrame(input.tabId, best.frameUrl);
+  }
+
+  return { ok: true, ...best, submitted };
+}
+
+async function tryAutoSubmitFrame(tabId, frameUrl) {
+  const targets = await getFrameTargets(tabId);
+  const target = targets.find((f) => f.url === frameUrl) || targets[0];
+  if (!target) return false;
+
+  const response = await sendToFrame(tabId, target.frameId, {
+    type: "JOBHUNTER_AUTO_SUBMIT",
+  });
+
+  return Boolean(response?.ok && response?.submitted);
 }
 
 function selectBestResult(results) {
-  const sorted = [...results].sort((a, b) => scoreResult(b) - scoreResult(a));
-  return sorted[0];
+  return [...results].sort((a, b) => scoreResult(b) - scoreResult(a))[0];
 }
 
 function scoreResult(result) {
@@ -193,10 +210,7 @@ function getFrameTargets(tabId) {
   return new Promise((resolve) => {
     chrome.webNavigation.getAllFrames({ tabId }, (frames) => {
       const output = Array.isArray(frames)
-        ? frames.map((frame) => ({
-          frameId: Number(frame.frameId || 0),
-          url: String(frame.url || ""),
-        }))
+        ? frames.map((f) => ({ frameId: Number(f.frameId || 0), url: String(f.url || "") }))
         : [];
       if (output.length === 0) {
         resolve([{ frameId: 0, url: "" }]);
@@ -209,47 +223,27 @@ function getFrameTargets(tabId) {
 }
 
 function framePriority(url, frameId) {
-  const normalized = String(url || "").toLowerCase();
+  const n = String(url || "").toLowerCase();
   let score = frameId === 0 ? 25 : 0;
-
-  if (normalized.includes("job-boards.greenhouse.io/embed/job_app")) {
-    score += 400;
-  }
-  if (normalized.includes("greenhouse")) {
-    score += 220;
-  }
-  if (normalized.includes("/apply")) {
-    score += 120;
-  }
-  if (normalized.includes("stripe.com/jobs/listing")) {
-    score += 90;
-  }
-  if (normalized.includes("workday") || normalized.includes("myworkdayjobs")) {
-    score += 80;
-  }
-  if (normalized.includes("lever.co") || normalized.includes("ashbyhq.com")) {
-    score += 70;
-  }
-
+  if (n.includes("job-boards.greenhouse.io/embed/job_app")) score += 400;
+  if (n.includes("greenhouse"))  score += 220;
+  if (n.includes("/apply"))      score += 120;
+  if (n.includes("stripe.com/jobs/listing")) score += 90;
+  if (n.includes("workday") || n.includes("myworkdayjobs")) score += 80;
+  if (n.includes("lever.co") || n.includes("ashbyhq.com")) score += 70;
   return score;
 }
 
 function sendToFrame(tabId, frameId, payload) {
   return new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, payload, { frameId }, (response) => {
-      const lastError = chrome.runtime.lastError;
-      if (lastError) {
-        resolve({
-          ok: false,
-          error: lastError.message || `No receiver in frame ${frameId}.`,
-        });
+      const err = chrome.runtime.lastError;
+      if (err) {
+        resolve({ ok: false, error: err.message || `No receiver in frame ${frameId}.` });
         return;
       }
       if (!response) {
-        resolve({
-          ok: false,
-          error: `No response from frame ${frameId}.`,
-        });
+        resolve({ ok: false, error: `No response from frame ${frameId}.` });
         return;
       }
       resolve(response);
@@ -259,24 +253,17 @@ function sendToFrame(tabId, frameId, payload) {
 
 function getTabUrl(tabId) {
   return new Promise((resolve) => {
-    chrome.tabs.get(tabId, (tab) => {
-      resolve(tab?.url || "");
-    });
+    chrome.tabs.get(tabId, (tab) => resolve(tab?.url || ""));
   });
 }
 
 function normalizeBaseUrl(value) {
   const raw = String(value || "").trim();
-  if (!raw) {
-    return DEFAULT_BASE_URL;
-  }
-
+  if (!raw) return DEFAULT_BASE_URL;
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
   try {
     const parsed = new URL(withProtocol);
-    if (parsed.hostname === "0.0.0.0") {
-      parsed.hostname = "127.0.0.1";
-    }
+    if (parsed.hostname === "0.0.0.0") parsed.hostname = "127.0.0.1";
     return `${parsed.protocol}//${parsed.host}`.replace(/\/$/, "");
   } catch {
     return DEFAULT_BASE_URL;
@@ -288,10 +275,7 @@ async function fetchWithLoopbackFallback(url, options) {
     return await fetch(url, options);
   } catch (primaryError) {
     const fallbackUrl = toLoopbackFallbackUrl(url);
-    if (!fallbackUrl) {
-      throw buildNetworkError(primaryError, url, null);
-    }
-
+    if (!fallbackUrl) throw buildNetworkError(primaryError, url, null);
     try {
       return await fetch(fallbackUrl, options);
     } catch (fallbackError) {
@@ -304,9 +288,7 @@ function toLoopbackFallbackUrl(url) {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
-    if (host !== "localhost" && host !== "0.0.0.0") {
-      return null;
-    }
+    if (host !== "localhost" && host !== "0.0.0.0") return null;
     parsed.hostname = "127.0.0.1";
     return parsed.toString();
   } catch {
@@ -316,16 +298,11 @@ function toLoopbackFallbackUrl(url) {
 
 function resolveApiUrl(rawUrl, baseUrl) {
   const candidate = typeof rawUrl === "string" ? rawUrl.trim() : "";
-  if (!candidate) {
-    return "";
-  }
-
+  if (!candidate) return "";
   const base = normalizeBaseUrl(baseUrl || DEFAULT_BASE_URL);
   try {
     const parsed = new URL(candidate, `${base}/`);
-    if (parsed.hostname === "0.0.0.0") {
-      parsed.hostname = "127.0.0.1";
-    }
+    if (parsed.hostname === "0.0.0.0") parsed.hostname = "127.0.0.1";
     return parsed.toString();
   } catch {
     return "";
@@ -338,9 +315,7 @@ function buildNetworkError(error, primaryUrl, fallbackUrl) {
     message || "Failed to fetch.",
     `Could not reach JobHunter API at ${primaryUrl}.`,
   ];
-  if (fallbackUrl) {
-    parts.push(`Fallback ${fallbackUrl} also failed.`);
-  }
+  if (fallbackUrl) parts.push(`Fallback ${fallbackUrl} also failed.`);
   parts.push("Verify http://127.0.0.1:3000 is running and extension site access is allowed.");
   return new Error(parts.join(" "));
 }
@@ -353,16 +328,14 @@ function assertConfiguredToken(config) {
 
 function writeConfig(config) {
   return new Promise((resolve) => {
-    chrome.storage.local.set(
-      {
-        jobhunterConfig: {
-          baseUrl: normalizeBaseUrl(config.baseUrl || DEFAULT_BASE_URL),
-          token: String(config.token || "").trim(),
-          refreshMaterials: typeof config.refreshMaterials === "boolean" ? config.refreshMaterials : true,
-        },
+    chrome.storage.local.set({
+      jobhunterConfig: {
+        baseUrl:          normalizeBaseUrl(config.baseUrl || DEFAULT_BASE_URL),
+        token:            String(config.token || "").trim(),
+        refreshMaterials: typeof config.refreshMaterials === "boolean" ? config.refreshMaterials : true,
+        autoSubmit:       typeof config.autoSubmit === "boolean" ? config.autoSubmit : false,
       },
-      () => resolve(),
-    );
+    }, () => resolve());
   });
 }
 
@@ -371,18 +344,17 @@ function readConfig() {
     chrome.storage.local.get(["jobhunterConfig"], (result) => {
       const raw = result.jobhunterConfig || {};
       resolve({
-        baseUrl: normalizeBaseUrl(typeof raw.baseUrl === "string" ? raw.baseUrl : DEFAULT_BASE_URL),
-        token: typeof raw.token === "string" ? raw.token.trim() : "",
+        baseUrl:          normalizeBaseUrl(typeof raw.baseUrl === "string" ? raw.baseUrl : DEFAULT_BASE_URL),
+        token:            typeof raw.token === "string" ? raw.token.trim() : "",
         refreshMaterials: typeof raw.refreshMaterials === "boolean" ? raw.refreshMaterials : true,
+        autoSubmit:       typeof raw.autoSubmit === "boolean" ? raw.autoSubmit : false,
       });
     });
   });
 }
 
 function toHumanErrorMessage(error) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
+  if (error instanceof Error && error.message) return error.message;
   return "Unknown extension error.";
 }
 
@@ -390,10 +362,10 @@ function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Could not read resume blob."));
-    reader.onload = () => {
+    reader.onload  = () => {
       const result = String(reader.result || "");
       const marker = "base64,";
-      const index = result.indexOf(marker);
+      const index  = result.indexOf(marker);
       resolve(index >= 0 ? result.slice(index + marker.length) : "");
     };
     reader.readAsDataURL(blob);
