@@ -1,8 +1,10 @@
 import { getApplicationAutomationContext, replaceTailoredArtifacts } from "@jobhunter/db";
 import {
+  FormQuestionResolverService,
   ResumeTailorService,
   ShortAnswerGeneratorService,
   createLLMProviderFromConfig,
+  type FormQuestion,
   type LLMConfig,
 } from "@jobhunter/llm";
 import { NextResponse } from "next/server";
@@ -10,7 +12,7 @@ import { NextResponse } from "next/server";
 import { requireOnboardedUser } from "@/lib/auth";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<unknown> },
 ) {
   const user = await requireOnboardedUser();
@@ -25,6 +27,17 @@ export async function POST(
     );
   }
 
+  // Parse form questions from request body (sent by the extension's content-script)
+  let formQuestions: FormQuestion[] = [];
+  try {
+    const body = await request.json();
+    if (Array.isArray(body?.formQuestions)) {
+      formQuestions = body.formQuestions.slice(0, 80); // cap
+    }
+  } catch {
+    // No body or invalid JSON — proceed without questions
+  }
+
   // Build LLM config from user preferences (falls back to env vars if unset)
   const prefs = application.user.preferences;
   const llmConfig: LLMConfig | null = prefs?.llmProvider
@@ -37,8 +50,9 @@ export async function POST(
     : null;
 
   const llm = createLLMProviderFromConfig(llmConfig);
-  const tailorService = new ResumeTailorService(llm);
-  const answerService = new ShortAnswerGeneratorService(llm);
+  const tailorService   = new ResumeTailorService(llm);
+  const answerService   = new ShortAnswerGeneratorService(llm);
+  const questionService = new FormQuestionResolverService(llm);
 
   const job = {
     id: application.job.id,
@@ -72,6 +86,10 @@ export async function POST(
     requiresVisaSponsorship: application.user.profile.requiresVisaSponsorship ?? false,
     veteranStatus: application.user.profile.veteranStatus ?? "Not a protected veteran",
     disabilityStatus: application.user.profile.disabilityStatus ?? undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gender: (application.user.profile as any).gender ?? undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ethnicity: (application.user.profile as any).ethnicity ?? undefined,
     school: application.user.profile.school ?? "",
     degree: application.user.profile.degree ?? "",
     graduationDate: application.user.profile.graduationDate?.toISOString().slice(0, 10) ?? "",
@@ -80,8 +98,20 @@ export async function POST(
     currentTitle: application.user.profile.currentTitle ?? "",
   };
 
-  // Tailor resume first, then generate answers using the tailored content
-  const tailoredResume = await tailorService.tailor({ job, resumeText: application.resume.baseText ?? "" });
+  const preferences = {
+    workModes: (prefs?.workModes ?? ["remote"]).map((m) => m.toLowerCase()) as ("remote" | "hybrid" | "on_site" | "flexible")[],
+    targetRoles: prefs?.targetRoles ?? [],
+    locations: prefs?.targetLocations ?? [],
+  };
+
+  // Run all three LLM tasks: tailor resume, generate answers, resolve form questions
+  const [tailoredResume, fieldOverrides] = await Promise.all([
+    tailorService.tailor({ job, resumeText: application.resume.baseText ?? "" }),
+    formQuestions.length > 0
+      ? questionService.resolve({ questions: formQuestions, profile, preferences })
+      : Promise.resolve({}),
+  ]);
+
   const generatedAnswers = await answerService.generate({ job, profile, tailoredResume });
 
   // Persist fresh artifacts back to DB
@@ -98,5 +128,6 @@ export async function POST(
     ok: true,
     tailoredResume,
     generatedAnswers: generatedAnswers.items,
+    fieldOverrides, // LLM-resolved answers keyed by exact form label
   });
 }

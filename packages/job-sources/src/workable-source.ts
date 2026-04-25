@@ -1,68 +1,122 @@
 import type { JobPosting } from "@jobhunter/core";
 
 import {
+  fetchWithTimeout,
   type JobSourceAdapter,
   normalizeJobPosting,
   stripHtml,
   type SourceDiscoveryTarget,
 } from "./base";
 
-const WORKABLE_XML_URL = "https://www.workable.com/boards/workable.xml";
+/**
+ * Workable public job board API.
+ * Each company has its own subdomain board accessible at:
+ *   GET https://apply.workable.com/api/v3/accounts/{slug}/jobs
+ * Returns { results: Job[], nextPage?: string }
+ */
+const WORKABLE_API = "https://apply.workable.com/api/v3/accounts/{slug}/jobs";
+const MAX_PAGES = 5;
 
 export class WorkableJobSource implements JobSourceAdapter {
   kind = "workable" as const;
 
   async discoverJobs(target: SourceDiscoveryTarget): Promise<JobPosting[]> {
-    const response = await fetch(WORKABLE_XML_URL, { cache: "no-store" }).catch(() => null);
-    if (!response || !response.ok) {
-      return [];
-    }
-    const xml = await response.text();
-    const items = [...xml.matchAll(/<job>([\s\S]*?)<\/job>/g)].map((match) => match[1]);
-    const discoveredAt = new Date().toISOString();
+    const groups = await Promise.all(
+      target.identifiers.map(({ slug, companyName }) =>
+        this.fetchAllPages(slug, companyName ?? slug, target.sourceName),
+      ),
+    );
+    return groups.flat();
+  }
 
-    return items
-      .map((raw) => parseWorkableItem(raw, discoveredAt, target.sourceName))
-      .filter((job): job is JobPosting => {
-        if (!job) {
-          return false;
-        }
-        return target.identifiers.some(({ slug, companyName }) => {
-          const candidate = (companyName ?? slug).toLowerCase();
-          return job.company.toLowerCase() === candidate;
-        });
+  private async fetchAllPages(
+    slug: string,
+    companyName: string,
+    sourceName: string,
+  ): Promise<JobPosting[]> {
+    const all: JobPosting[] = [];
+    const discoveredAt = new Date().toISOString();
+    let nextPage: string | undefined;
+    let pageCount = 0;
+
+    while (pageCount < MAX_PAGES) {
+      const url = nextPage ?? WORKABLE_API.replace("{slug}", encodeURIComponent(slug));
+      const response = await fetchWithTimeout(url, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
       });
+
+      if (!response?.ok) break;
+
+      let payload: Record<string, unknown>;
+      try {
+        payload = await response.json();
+      } catch {
+        break;
+      }
+
+      const results = (payload.results ?? []) as Array<Record<string, unknown>>;
+      if (results.length === 0) break;
+
+      for (const job of results) {
+        const jobUrl = String(job.url ?? job.shortlink ?? "");
+        if (!jobUrl) continue;
+
+        const location = buildWorkableLocation(job);
+        const workMode = resolveWorkMode(job);
+
+        all.push(
+          normalizeJobPosting({
+            id: String(job.id ?? job.shortcode ?? `${slug}:${jobUrl}`),
+            externalId: String(job.id ?? job.shortcode ?? ""),
+            sourceKind: this.kind,
+            sourceName,
+            company: companyName,
+            title: String(job.title ?? "Untitled"),
+            location,
+            salaryMin: undefined,
+            salaryMax: undefined,
+            salaryCurrency: "USD",
+            description: stripHtml(String(job.description ?? job.full_description ?? "")),
+            url: jobUrl,
+            applyUrl: jobUrl,
+            workMode,
+            discoveredAt,
+          }),
+        );
+      }
+
+      nextPage = typeof payload.nextPage === "string" ? payload.nextPage : undefined;
+      if (!nextPage) break;
+      pageCount++;
+    }
+
+    return all;
   }
 }
 
-function parseWorkableItem(raw: string, discoveredAt: string, sourceName: string): JobPosting | null {
-  const getTag = (tag: string) => {
-    const match = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i"));
-    return match?.[1]?.trim() ?? "";
-  };
+function buildWorkableLocation(job: Record<string, unknown>): string {
+  const loc = job.location as Record<string, unknown> | undefined;
+  if (!loc) return "";
 
-  const company = getTag("company");
-  const url = getTag("url");
-  if (!company || !url) {
-    return null;
+  if (loc.telecommuting === true || job.remote === true) {
+    const country = String(loc.country ?? "");
+    return country ? `Remote — ${country}` : "Remote";
   }
 
-  const location = [getTag("city"), getTag("state"), getTag("country")].filter(Boolean).join(", ");
+  return [loc.city, loc.region, loc.country]
+    .filter(Boolean)
+    .join(", ");
+}
 
-  return normalizeJobPosting({
-    id: `${company}:${url}`,
-    externalId: url,
-    sourceKind: "workable",
-    sourceName,
-    company,
-    title: getTag("title") || "Untitled",
-    location: location || (getTag("remote").toLowerCase() === "true" ? "Remote" : ""),
-    salaryMin: undefined,
-    salaryMax: undefined,
-    salaryCurrency: "USD",
-    description: stripHtml(getTag("description")),
-    url,
-    applyUrl: url,
-    discoveredAt,
-  });
+function resolveWorkMode(
+  job: Record<string, unknown>,
+): "remote" | "hybrid" | "on_site" | "flexible" | undefined {
+  const loc = job.location as Record<string, unknown> | undefined;
+  if (loc?.telecommuting === true || job.remote === true) return "remote";
+  const workplaceType = String(job.workplace_type ?? "").toLowerCase();
+  if (workplaceType.includes("remote")) return "remote";
+  if (workplaceType.includes("hybrid")) return "hybrid";
+  if (workplaceType.includes("on-site") || workplaceType.includes("onsite")) return "on_site";
+  return undefined;
 }

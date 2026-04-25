@@ -26,6 +26,8 @@ export const structuredProfileFields = [
   "requiresVisaSponsorship",
   "veteranStatus",
   "disabilityStatus",
+  "gender",
+  "ethnicity",
   "school",
   "degree",
   "graduationDate",
@@ -49,6 +51,8 @@ export const structuredProfileSchema = z.object({
   requiresVisaSponsorship: z.boolean(),
   veteranStatus: z.string().min(1),
   disabilityStatus: z.string().optional(),
+  gender: z.string().optional(),       // EEO — "Male", "Female", "Non-binary", "Prefer not to say"
+  ethnicity: z.string().optional(),    // EEO — "Hispanic or Latino", "Not Hispanic or Latino", "Prefer not to say"
   school: z.string().min(1),
   degree: z.string().min(1),
   graduationDate: z.string().min(1),

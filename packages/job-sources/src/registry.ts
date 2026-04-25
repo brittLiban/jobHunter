@@ -22,7 +22,7 @@ export function getJobSourceAdapter(kind: JobSourceKind): JobSourceAdapter {
 }
 
 export async function discoverJobsForTargets(targets: SourceDiscoveryTarget[]): Promise<JobPosting[]> {
-  const groups = await Promise.all(
+  const groups = await Promise.allSettled(
     targets.map(async (target) => {
       const adapter = getJobSourceAdapter(target.kind);
       return adapter.discoverJobs(target);
@@ -30,11 +30,10 @@ export async function discoverJobsForTargets(targets: SourceDiscoveryTarget[]): 
   );
 
   const merged = new Map<string, JobPosting>();
-  for (const group of groups) {
-    for (const job of group.map(normalizeJobPosting)) {
-      if (!job.url || !job.company || !job.title) {
-        continue;
-      }
+  for (const result of groups) {
+    if (result.status === "rejected") continue;
+    for (const job of result.value.map(normalizeJobPosting)) {
+      if (!job.url || !job.company || !job.title) continue;
       merged.set(job.url, job);
     }
   }

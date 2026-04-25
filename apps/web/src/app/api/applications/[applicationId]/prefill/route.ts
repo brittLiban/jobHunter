@@ -36,6 +36,10 @@ export async function GET(
       requiresVisaSponsorship: application.user.profile.requiresVisaSponsorship ?? false,
       veteranStatus: application.user.profile.veteranStatus ?? "Not a protected veteran",
       disabilityStatus: application.user.profile.disabilityStatus ?? undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      gender: (application.user.profile as any).gender ?? undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ethnicity: (application.user.profile as any).ethnicity ?? undefined,
       school: application.user.profile.school ?? "",
       degree: application.user.profile.degree ?? "",
       graduationDate: application.user.profile.graduationDate?.toISOString().slice(0, 10) ?? "",

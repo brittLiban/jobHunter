@@ -16,6 +16,8 @@ export function profileFromFormData(formData: FormData): StructuredProfile {
     requiresVisaSponsorship: getString(formData, "requiresVisaSponsorship").toLowerCase() === "true",
     veteranStatus: getString(formData, "veteranStatus"),
     disabilityStatus: getOptionalString(formData, "disabilityStatus"),
+    gender: getOptionalString(formData, "gender"),
+    ethnicity: getOptionalString(formData, "ethnicity"),
     school: getString(formData, "school"),
     degree: getString(formData, "degree"),
     graduationDate: getString(formData, "graduationDate"),

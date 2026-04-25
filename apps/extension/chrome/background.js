@@ -33,23 +33,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const refreshMaterials = Boolean(message.refreshMaterials);
         const autoSubmit = Boolean(message.autoSubmit);
 
-        // Step 1: Optionally live-tailor before fetching the packet
-        if (refreshMaterials && applicationId) {
+        // Step 1: Extract form questions from the page for LLM resolution
+        let formQuestions = [];
+        if (applicationId) {
+          try {
+            const qResponse = await sendToFrame(tabId, 0, { type: "JOBHUNTER_EXTRACT_QUESTIONS" });
+            if (qResponse?.ok && Array.isArray(qResponse.formQuestions)) {
+              formQuestions = qResponse.formQuestions;
+            }
+          } catch {
+            // Non-fatal
+          }
+        }
+
+        // Step 2: Live-tailor (always when applicationId present; pass extracted questions)
+        let fieldOverrides = {};
+        if (applicationId) {
           const tailorUrl = `${config.baseUrl || DEFAULT_BASE_URL}/api/applications/${applicationId}/live-tailor`;
           try {
-            await fetchWithLoopbackFallback(tailorUrl, {
+            const tailorResponse = await fetchWithLoopbackFallback(tailorUrl, {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${config.token}`,
                 "Content-Type": "application/json",
               },
+              body: JSON.stringify({ formQuestions }),
             });
+            if (tailorResponse.ok) {
+              const tailorData = await tailorResponse.json();
+              if (tailorData?.fieldOverrides && typeof tailorData.fieldOverrides === "object") {
+                fieldOverrides = tailorData.fieldOverrides;
+              }
+            }
           } catch {
             // Non-fatal — fall through to use existing materials
           }
         }
 
-        // Step 2: Fetch the (now-refreshed) packet
+        // Step 3: Fetch the (now-refreshed) packet
         const bundle = await fetchPreparedPacket({
           config,
           applicationId,
@@ -57,10 +78,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           refreshMaterials: false, // already refreshed above
         });
 
-        // Step 3: Apply across all frames
+        // Step 4: Merge LLM fieldOverrides into the packet (LLM answers take priority)
+        const mergedPacket = {
+          ...bundle.packet,
+          fieldOverrides: {
+            ...(bundle.packet?.fieldOverrides || {}),
+            ...fieldOverrides,
+          },
+        };
+
+        // Step 5: Apply across all frames
         const result = await applyPacketAcrossFrames({
           tabId,
-          packet: bundle.packet,
+          packet: mergedPacket,
           resumeFile: bundle.resumeFile,
           autoSubmit,
         });

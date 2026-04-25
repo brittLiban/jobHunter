@@ -219,6 +219,10 @@ export function serializeProfile(profile: UserProfile | null | undefined): Parti
     requiresVisaSponsorship: profile.requiresVisaSponsorship ?? undefined,
     veteranStatus: profile.veteranStatus ?? undefined,
     disabilityStatus: profile.disabilityStatus ?? undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gender: (profile as any).gender ?? undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ethnicity: (profile as any).ethnicity ?? undefined,
     school: profile.school ?? undefined,
     degree: profile.degree ?? undefined,
     graduationDate: profile.graduationDate?.toISOString().slice(0, 10),

@@ -1,5 +1,6 @@
 export * from "./application-field-answer-suggester";
 export * from "./application-field-resolver";
+export * from "./form-question-resolver";
 export * from "./job-scorer";
 export * from "./job-seniority";
 export * from "./prompt-templates";

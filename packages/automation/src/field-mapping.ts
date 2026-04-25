@@ -34,6 +34,8 @@ const labelAliases: Record<keyof StructuredApplicationDefaults, string[]> = {
   ],
   veteranStatus: ["veteran status", "veteran"],
   disabilityStatus: ["disability status", "disability"],
+  gender: ["gender", "sex", "gender identity"],
+  ethnicity: ["ethnicity", "race", "hispanic", "latino", "ethnic background", "hispanic or latino"],
   school: ["school", "college", "university", "most recent school you attended"],
   degree: ["degree", "most recent degree you obtained"],
   graduationDate: ["graduation", "graduation date", "graduation year", "expected graduation date"],

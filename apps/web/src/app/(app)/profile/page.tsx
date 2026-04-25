@@ -3,6 +3,7 @@ import { ExtensionTokenManager } from "@/components/extension-token-manager";
 import { requireOnboardedUser } from "@/lib/auth";
 import { loadProfilePageData } from "@/lib/page-data";
 import { listExtensionTokensForUser } from "@jobhunter/db";
+import type { StructuredProfile } from "@jobhunter/core";
 
 function listValue(arr: string[] | undefined) {
   return arr && arr.length > 0 ? arr.join(", ") : "";
@@ -21,7 +22,7 @@ export default async function ProfilePage({
   const bundle = await loadProfilePageData(user.id);
   const extensionTokens = await listExtensionTokensForUser(user.id);
 
-  const profile = bundle?.profile ?? {};
+  const profile = (bundle?.profile ?? {}) as Partial<StructuredProfile> & { email?: string };
   const prefs = bundle?.preferences ?? {};
 
   const workModes     = new Set(prefs.workModes?.length ? prefs.workModes : ["remote", "hybrid"]);
@@ -41,6 +42,8 @@ export default async function ProfilePage({
       <input type="hidden" name="usCitizenStatus"         value={profile.usCitizenStatus ?? ""} />
       <input type="hidden" name="requiresVisaSponsorship" value={String(profile.requiresVisaSponsorship ?? false)} />
       <input type="hidden" name="veteranStatus"           value={profile.veteranStatus ?? ""} />
+      <input type="hidden" name="gender"                  value={profile.gender ?? ""} />
+      <input type="hidden" name="ethnicity"               value={profile.ethnicity ?? ""} />
       <input type="hidden" name="school"                  value={profile.school ?? ""} />
       <input type="hidden" name="degree"                  value={profile.degree ?? ""} />
       <input type="hidden" name="graduationDate"          value={profile.graduationDate ?? "2025-01-01"} />
@@ -156,6 +159,18 @@ export default async function ProfilePage({
                   </SettingsSelect>
                   <SettingsField label="Veteran status" name="veteranStatus" defaultValue={profile.veteranStatus} placeholder="Not a veteran" required />
                   <SettingsField label="Disability status" name="disabilityStatus" defaultValue={profile.disabilityStatus} placeholder="No disability" />
+                </div>
+              </div>
+
+              {/* EEO */}
+              <div>
+                <div className="form-section-title">Equal Employment Opportunity (Optional)</div>
+                <div className="card-subtitle" style={{ marginBottom: 12, fontSize: 12 }}>
+                  Voluntary self-identification fields used to pre-fill EEO questions on job applications. Leave blank to answer &ldquo;Prefer not to say&rdquo; automatically.
+                </div>
+                <div className="form-grid">
+                  <SettingsField label="Gender" name="gender" defaultValue={profile.gender} placeholder="e.g. Male, Female, Non-binary, Prefer not to say" />
+                  <SettingsField label="Ethnicity / Hispanic or Latino" name="ethnicity" defaultValue={profile.ethnicity} placeholder="e.g. Not Hispanic or Latino, Hispanic or Latino" />
                 </div>
               </div>
 

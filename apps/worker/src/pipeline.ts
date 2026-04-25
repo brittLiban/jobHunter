@@ -79,15 +79,20 @@ export async function runPipeline(options: PipelineOptions = {}) {
   // If a specific board was requested, narrow to that single target
   if (options.boardFilter) {
     const { source, slug } = options.boardFilter;
-    sourceTargets = sourceTargets.filter(
-      (t) => t.kind === source && t.identifiers.includes(slug),
-    );
-    // If the slug isn't in the merged list, inject it directly
+    sourceTargets = sourceTargets
+      .filter((t) => t.kind === source)
+      .map((t) => ({
+        ...t,
+        identifiers: t.identifiers.filter((id) => id.slug === slug),
+      }))
+      .filter((t) => t.identifiers.length > 0);
+
+    // If the slug wasn't in the merged list, inject it directly
     if (sourceTargets.length === 0) {
       sourceTargets = [{
         kind: source as never,
         sourceName: `${source} (${slug})`,
-        identifiers: [slug],
+        identifiers: [{ slug }],
       }];
     }
   }

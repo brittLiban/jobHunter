@@ -22,6 +22,8 @@ export type StructuredApplicationDefaults = {
   requiresVisaSponsorship: "Yes" | "No";
   veteranStatus: string;
   disabilityStatus?: string;
+  gender?: string;
+  ethnicity?: string;
   school: string;
   degree: string;
   graduationDate: string;
@@ -65,6 +67,8 @@ export function buildStructuredApplicationDefaults(input: {
     requiresVisaSponsorship: profile.requiresVisaSponsorship ? "Yes" : "No",
     veteranStatus: profile.veteranStatus,
     disabilityStatus: profile.disabilityStatus,
+    gender: profile.gender,
+    ethnicity: profile.ethnicity,
     school: profile.school,
     degree: profile.degree,
     graduationDate: profile.graduationDate,

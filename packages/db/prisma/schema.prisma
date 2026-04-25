@@ -183,6 +183,8 @@ model UserProfile {
   requiresVisaSponsorship Boolean?
   veteranStatus          String?
   disabilityStatus       String?
+  gender                 String?
+  ethnicity              String?
   school                 String?
   degree                 String?
   graduationDate         DateTime?

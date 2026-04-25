@@ -73,6 +73,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "JOBHUNTER_EXTRACT_QUESTIONS") {
+    sendResponse({ ok: true, formQuestions: extractFormQuestions() });
+    return false;
+  }
+
   return false;
 });
 
@@ -168,7 +173,7 @@ async function applyPacket(packet, resumeFile) {
       continue;
     }
 
-    const changed = applyValue(field, value, descriptor);
+    const changed = await applyValue(field, value, descriptor);
     if (changed) {
       filledFieldCount += 1;
     }
@@ -238,6 +243,172 @@ function collectUnresolvedRequiredFieldsDeep() {
   return uniqueStrings(unresolved);
 }
 
+/**
+ * Walks all visible form fields in the page (including shadow DOM) and returns
+ * a structured list of questions suitable for the LLM resolver.
+ *
+ * Each entry includes:
+ *   label   — human-readable question text
+ *   type    — "select" | "radio" | "checkbox" | "text" | "textarea"
+ *   options — for selects/radios/checkboxes: the visible option texts
+ *   required — whether the field is required
+ */
+function extractFormQuestions() {
+  const questions = [];
+  const seenLabels = new Set();
+  const radioGroupsSeen = new Set();
+
+  const fields = collectFormFieldsDeep();
+
+  for (const field of fields) {
+    if (!isSupportedField(field) || isFileInput(field) || !isVisible(field)) continue;
+
+    const label = getFieldLabel(field) || getAttribute(field, "placeholder") || "";
+    if (!label || label.length < 2) continue;
+
+    const normalizedLabel = normalize(label);
+
+    if (field instanceof HTMLSelectElement) {
+      if (seenLabels.has(normalizedLabel)) continue;
+      seenLabels.add(normalizedLabel);
+      const options = Array.from(field.options)
+        .map((o) => o.text.trim())
+        .filter((t) => t && t !== "—" && t !== "-" && t.length > 0);
+      // Skip placeholder-only option
+      const realOptions = options.filter((o) => !/^(select|choose|please select|--)/i.test(o));
+      if (realOptions.length === 0) continue;
+      questions.push({
+        label,
+        type: "select",
+        options: realOptions,
+        required: field.required || getAttribute(field, "aria-required") === "true",
+      });
+      continue;
+    }
+
+    if (field instanceof HTMLInputElement) {
+      const type = field.type.toLowerCase();
+
+      if (type === "radio") {
+        const groupKey = field.name ? `radio:${normalize(field.name)}` : `radio:${normalizedLabel}`;
+        if (radioGroupsSeen.has(groupKey)) continue;
+        radioGroupsSeen.add(groupKey);
+
+        const group = getChoiceGroup(field);
+        const options = group
+          .map((el) => getFieldLabel(el) || el.value || "")
+          .map((t) => t.trim())
+          .filter(Boolean);
+
+        const groupLabel = getLegendLabel(field) || getFieldLabel(field) || label;
+        const groupLabelNorm = normalize(groupLabel);
+        if (seenLabels.has(groupLabelNorm)) continue;
+        seenLabels.add(groupLabelNorm);
+
+        if (options.length === 0) continue;
+        questions.push({
+          label: groupLabel,
+          type: "radio",
+          options,
+          required: field.required || getAttribute(field, "aria-required") === "true",
+        });
+        continue;
+      }
+
+      if (type === "checkbox") {
+        // Treat each checkbox individually (e.g., "countries you can work in")
+        if (seenLabels.has(normalizedLabel)) continue;
+        seenLabels.add(normalizedLabel);
+        questions.push({
+          label,
+          type: "checkbox",
+          required: field.required || getAttribute(field, "aria-required") === "true",
+        });
+        continue;
+      }
+
+      if (type === "text" || type === "number" || type === "") {
+        if (seenLabels.has(normalizedLabel)) continue;
+        seenLabels.add(normalizedLabel);
+        // Skip pure identity fields — rules handle these fine
+        if (["first name", "last name", "full name", "email", "phone"].some((s) => normalizedLabel.includes(s))) continue;
+        questions.push({
+          label,
+          type: "text",
+          required: field.required || getAttribute(field, "aria-required") === "true",
+        });
+        continue;
+      }
+    }
+
+    if (field instanceof HTMLTextAreaElement) {
+      if (seenLabels.has(normalizedLabel)) continue;
+      seenLabels.add(normalizedLabel);
+      // Skip fields that already have rule-based values
+      if (["cover letter", "why", "summary", "additional"].some((s) => normalizedLabel.includes(s))) continue;
+      questions.push({
+        label,
+        type: "textarea",
+        required: field.required || getAttribute(field, "aria-required") === "true",
+      });
+      continue;
+    }
+  }
+
+  // Also capture custom dropdowns (React-Select comboboxes)
+  const customTriggers = collectDeepElements("[role='combobox'], [aria-haspopup='listbox']")
+    .filter((el) => el instanceof HTMLElement && isVisible(el));
+
+  for (const trigger of customTriggers) {
+    const label = getFieldLabel(trigger) || normalize(getAttribute(trigger, "aria-label")) || "";
+    if (!label || label.length < 2) continue;
+    const normalizedLabel = normalize(label);
+    if (seenLabels.has(normalizedLabel)) continue;
+    seenLabels.add(normalizedLabel);
+
+    // Try to get options from already-rendered listbox or sibling select
+    const container = trigger.closest("[data-field], .field, .application-question, .question, li, div");
+    let options = [];
+    if (container) {
+      const hiddenSelect = container.querySelector("select");
+      if (hiddenSelect instanceof HTMLSelectElement) {
+        options = Array.from(hiddenSelect.options)
+          .map((o) => o.text.trim())
+          .filter((t) => t && !/^(select|choose|please select|--)/i.test(t));
+      }
+    }
+    // Try from aria-owns / aria-controls listbox
+    if (options.length === 0) {
+      const listboxId = getAttribute(trigger, "aria-owns") || getAttribute(trigger, "aria-controls");
+      if (listboxId) {
+        const listbox = document.getElementById(listboxId);
+        if (listbox) {
+          options = Array.from(listbox.querySelectorAll("[role='option']"))
+            .map((el) => el instanceof HTMLElement ? el.textContent?.trim() || "" : "")
+            .filter(Boolean);
+        }
+      }
+    }
+
+    questions.push({
+      label,
+      type: "select",
+      ...(options.length > 0 ? { options } : {}),
+      required: getAttribute(trigger, "aria-required") === "true",
+    });
+  }
+
+  return questions;
+}
+
+/** Gets the <legend> text for a radio/checkbox group */
+function getLegendLabel(field) {
+  const fieldset = field.closest("fieldset");
+  if (!fieldset) return "";
+  const legend = fieldset.querySelector("legend");
+  return legend ? normalize(legend.textContent || "") : "";
+}
+
 async function tryResumeUpload(resumeFile, fields) {
   const fileInputs = fields
     .filter((field) => isFileInput(field))
@@ -304,38 +475,88 @@ function resolveFieldValue(input) {
     return directTypeValue;
   }
 
+  // Layer 2: For choice/select fields on clear yes/no questions, derive the
+  // answer deterministically from profile booleans before hitting profilePairs.
+  // This avoids passing long strings like "Authorized to work in the United States"
+  // into setChoiceInput where they get mis-normalised.
+  if (isChoiceInput(field) || field instanceof HTMLSelectElement) {
+    const ynAnswer = resolveYesNoFromProfile(descriptor, defaults);
+    if (ynAnswer) return ynAnswer;
+  }
+
+  // Full location string (city + state) for fields that want a single location value
+  const cityState = [defaults.city, defaults.state].filter(Boolean).join(", ");
+  const cityStateCountry = [defaults.city, defaults.state, defaults.country].filter(Boolean).join(", ");
+
   const profilePairs = [
     [["first name", "given name", "first_name", "firstname"], defaults.firstName],
     [["last name", "family name", "surname", "last_name", "lastname"], defaults.lastName],
     [["full name", "legal name", "applicant name", "candidate name"], defaults.fullLegalName],
     [["email", "e mail", "email address"], defaults.email],
+    [["country code", "dialing code", "dial code", "calling code", "phone code", "phone prefix", "country dial"], phoneDialCode(defaults.country)],
     [["phone", "mobile", "telephone", "phone number"], defaults.phone],
     [["city", "location city", "current city"], defaults.city],
     [["state", "province", "region"], defaults.state],
-    [["country", "nation"], defaults.country],
+    // Country: broad set of phrasings including "where do you reside", "country of residence"
+    [["country", "nation", "country of residence", "country reside", "where do you reside",
+      "reside", "where you live", "where you currently", "country where", "country you live",
+      "currently reside", "residing in"], defaults.country],
+    // City+state combos — avoid plain "location" (matches "work from a remote location")
+    [["current location", "location city", "where are you located", "address city",
+      "city and state", "city state", "city where", "where are you based",
+      "if located in us", "if us based", "if in the us", "us city", "us state and city"], cityState || defaults.city],
+    [["full address", "mailing address"], cityStateCountry],
     [["linkedin"], defaults.linkedinUrl],
     [["github"], defaults.githubUrl],
     [["portfolio", "website", "personal site", "homepage"], defaults.portfolioUrl],
-    [["work authorization", "authorized to work", "work permit"], defaults.workAuthorization],
+    [["work authorization", "authorized to work", "work permit", "legally authorized",
+      "authorization to work", "legal right to work", "right to work",
+      "eligible to work", "in the locations you selected", "in the countries"], defaults.workAuthorization],
     [["us citizen", "citizen status", "citizenship"], defaults.usCitizenStatus],
-    [["visa", "sponsor", "sponsorship", "work sponsorship"], defaults.requiresVisaSponsorship],
+    [["visa", "sponsor", "sponsorship", "work sponsorship", "require visa", "require sponsorship",
+      "need sponsorship", "work permit", "permit now or", "permit in the future",
+      "immigration status", "visa status"], defaults.requiresVisaSponsorship],
     [["veteran"], defaults.veteranStatus],
     [["disability"], defaults.disabilityStatus],
+    [["gender"], defaults.gender],
+    [["hispanic", "latino", "latinx", "ethnicity", "race", "racial", "ethnic background"], defaults.ethnicity],
     [["school", "university", "college", "education"], defaults.school],
     [["degree", "major"], defaults.degree],
     [["graduation", "graduated"], defaults.graduationDate],
-    [["years of experience", "experience years"], defaults.yearsOfExperience],
-    [["current company", "employer", "present company"], defaults.currentCompany],
-    [["current title", "job title", "present title"], defaults.currentTitle],
+    [["years of experience", "experience years", "years experience"], defaults.yearsOfExperience],
+    [["current company", "employer", "present company", "current employer"], defaults.currentCompany],
+    [["current title", "job title", "present title", "current role"], defaults.currentTitle],
   ];
 
   for (const [patterns, value] of profilePairs) {
-    if (!value || !descriptorMatches(descriptor, patterns)) {
+    if (value === undefined || value === null || value === "" || !descriptorMatches(descriptor, patterns)) {
       continue;
     }
+
     if (isChoiceInput(field)) {
-      return inferYesNoValue(value);
+      const isBoolLike = typeof value === "boolean"
+        || (typeof value === "number" && (value === 0 || value === 1))
+        || String(value).toLowerCase() === "true"
+        || String(value).toLowerCase() === "false";
+
+      if (isBoolLike) return inferYesNoValue(value);
+
+      const isRadio = field instanceof HTMLInputElement && field.type.toLowerCase() === "radio";
+      if (isRadio) {
+        // For radio groups: return the value string directly.
+        // setChoiceInput searches all options in the group and clicks the matching one.
+        return String(value);
+      }
+
+      // Checkbox: only check if THIS checkbox's own label semantically matches the value.
+      // (prevents "United States" value from checking every country checkbox on the page)
+      const ownLabel = normalize(getFieldLabel(field));
+      if (ownLabel && semanticChoiceMatch(ownLabel, normalize(String(value)))) {
+        return "Yes";
+      }
+      return "";
     }
+
     return String(value);
   }
 
@@ -401,6 +622,86 @@ function resolveFieldOverride(overrides, descriptor) {
   return "";
 }
 
+/**
+ * For questions that clearly map to a profile boolean (work auth, sponsorship,
+ * remote preference, citizenship, marketing opt-in, etc.), return "Yes"/"No"
+ * deterministically — no LLM or fuzzy matching needed.
+ *
+ * Called before profilePairs for choice/select inputs so we don't pass long
+ * natural-language strings into yes/no option matching.
+ */
+function resolveYesNoFromProfile(descriptor, defaults) {
+  const c = descriptor.combined;
+  if (!c) return "";
+
+  // Authorization to work — true when person DOES NOT require sponsorship
+  if (anyIn(c, [
+    "authorized to work", "legally authorized", "legal right to work", "right to work",
+    "eligible to work", "work in the united states", "work in this country",
+    "work without restriction", "work authorization status",
+    "in the locations you selected", "in the countries you selected",
+  ])) {
+    return defaults.requiresVisaSponsorship === "Yes" ? "No" : "Yes";
+  }
+
+  // Visa / sponsorship requirement — true when person DOES require sponsorship
+  if (anyIn(c, [
+    "require sponsor", "need sponsor", "visa sponsor", "require.*visa", "work permit",
+    "immigration sponsor", "sponsorship required", "will you require",
+    "permit now", "permit in the future", "require work authorization",
+    "need work authorization", "require authorization",
+  ])) {
+    return defaults.requiresVisaSponsorship || "No";
+  }
+
+  // Remote work preference
+  if (anyIn(c, [
+    "work remotely", "remote work", "work from home", "working remotely",
+    "this role offer remote", "this role.*remote", "open to remote",
+    "prefer remote", "work from anywhere", "remote.*position",
+  ])) {
+    const wantsRemote = Array.isArray(defaults.workModes)
+      && defaults.workModes.some((m) => normalize(String(m)).includes("remote"));
+    return wantsRemote ? "Yes" : "No";
+  }
+
+  // US citizen check
+  if (anyIn(c, [
+    "us citizen", "united states citizen", "american citizen",
+    "citizen of the united", "are you a citizen", "us national",
+  ])) {
+    const status = normalize(defaults.usCitizenStatus || "");
+    const isCitizen = status.includes("citizen") && !status.startsWith("non");
+    return isCitizen ? "Yes" : "No";
+  }
+
+  // Marketing / communications opt-in — default to No (privacy-safe)
+  if (anyIn(c, [
+    "whatsapp", "opt in", "opt-in", "marketing email", "newsletter",
+    "promotional", "receive messages", "text messages", "sms",
+    "communication preference", "contact me", "email updates",
+    "receive.*whatsapp", "receive.*sms",
+  ])) {
+    return defaults.messagingOptIn || "No";
+  }
+
+  // "Have you worked here / been employed by [company]?" — default No
+  if (anyIn(c, [
+    "previously employed", "employed by", "worked at this company",
+    "worked here", "former employee", "have you ever worked",
+    "work for us before", "previously worked",
+  ])) {
+    return "No";
+  }
+
+  return "";
+}
+
+/** Returns true if any of the patterns appears in the combined descriptor string. */
+function anyIn(combined, patterns) {
+  return patterns.some((p) => combined.includes(normalize(p)));
+}
+
 function resolveDirectValueByInputType(field, descriptor, defaults) {
   if (field instanceof HTMLInputElement) {
     const type = field.type.toLowerCase();
@@ -419,11 +720,18 @@ function resolveDirectValueByInputType(field, descriptor, defaults) {
       }
       return defaults.portfolioUrl || defaults.linkedinUrl || defaults.githubUrl || "";
     }
+    // Phone country code / dialing prefix fields
+    if (descriptorMatches(descriptor, [
+      "country code", "dialing code", "dial code", "calling code",
+      "phone code", "phone prefix", "country dial", "international code",
+    ])) {
+      return phoneDialCode(defaults.country);
+    }
   }
   return "";
 }
 
-function applyValue(field, value, descriptor) {
+async function applyValue(field, value, descriptor) {
   if (!value) {
     return false;
   }
@@ -450,6 +758,11 @@ function applyValue(field, value, descriptor) {
     if (type === "file") {
       return false;
     }
+    // If this input is a combobox or triggers a custom dropdown, prefer the
+    // custom-dropdown path so we click the real option rather than typing text.
+    if (isCustomSelectTrigger(field)) {
+      return applyCustomSelect(field, value, descriptor);
+    }
     const current = getElementValue(field);
     if (hasUserValue(current)) {
       return false;
@@ -460,6 +773,10 @@ function applyValue(field, value, descriptor) {
   }
 
   if (isEditableElement(field)) {
+    // If the editable element is a custom-select combobox, use the option-click path.
+    if (isCustomSelectTrigger(field)) {
+      return applyCustomSelect(field, value, descriptor);
+    }
     const current = getElementValue(field);
     if (hasUserValue(current)) {
       return false;
@@ -470,6 +787,86 @@ function applyValue(field, value, descriptor) {
     return true;
   }
 
+  return false;
+}
+
+/**
+ * Returns true when the element is a visible trigger for a custom (non-native)
+ * dropdown — e.g. Greenhouse's React-Select comboboxes.
+ */
+function isCustomSelectTrigger(el) {
+  const role = normalize(getAttribute(el, "role"));
+  if (role === "combobox" || role === "listbox") return true;
+  const ariaHaspopup = normalize(getAttribute(el, "aria-haspopup"));
+  if (ariaHaspopup === "listbox" || ariaHaspopup === "true") return true;
+  return false;
+}
+
+/**
+ * Handles Greenhouse-style React-Select and similar custom dropdowns.
+ * Strategy:
+ *  1. Check if a sibling hidden <select> exists — set it natively first.
+ *  2. Open the dropdown by clicking the trigger.
+ *  3. Find the [role="option"] that best matches the desired value and click it.
+ *  4. Close if nothing matched (press Escape).
+ */
+async function applyCustomSelect(trigger, value, descriptor) {
+  const requested = expandSelectRequest(value, descriptor);
+
+  // 1. Try to set the underlying hidden native <select> first (React may sync from it)
+  const container = trigger.closest("[data-field], .field, .application-question, .question, li, div");
+  if (container) {
+    const hiddenSelect = container.querySelector("select");
+    if (hiddenSelect instanceof HTMLSelectElement) {
+      const nativeFilled = setSelectValue(hiddenSelect, value, descriptor);
+      if (nativeFilled) {
+        // Also fire change on the trigger so the React layer re-renders
+        fireInputEvents(trigger);
+        return true;
+      }
+    }
+  }
+
+  // 2. Open the dropdown
+  trigger.click();
+  trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  await delay(120);
+
+  // 3. Find [role="option"] elements now rendered in the DOM
+  const options = collectDeepElements("[role='option'], [role='menuitem'], [class*='option']")
+    .filter((el) => el instanceof HTMLElement && isVisible(el));
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const opt of options) {
+    const text = normalize(readNodeText(opt));
+    const val  = normalize(getAttribute(opt, "data-value") || getAttribute(opt, "value") || "");
+    let score  = 0;
+
+    for (const req of requested) {
+      if (!req || req.length < 2) continue;
+      if (text === req || val === req) { score = 100; break; }
+      if (text.includes(req) && req.length >= 3) score = Math.max(score, 60);
+      if (req.includes(text) && text.length >= 3) score = Math.max(score, 50);
+      if (val.includes(req) && req.length >= 3)  score = Math.max(score, 40);
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = opt;
+    }
+  }
+
+  if (bestMatch && bestScore >= 40) {
+    bestMatch.click();
+    await delay(60);
+    return true;
+  }
+
+  // 4. No match — close the dropdown and give up
+  trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await delay(60);
   return false;
 }
 
@@ -548,16 +945,60 @@ function expandSelectRequest(value, descriptor) {
     ["no", "false", "n", "0"].forEach((item) => expanded.add(item));
   }
 
-  if (descriptorMatches(descriptor, ["country"]) && requested.includes("united states")) {
-    ["us", "usa", "united states", "united states of america"].forEach((item) => expanded.add(normalize(item)));
+  // Country name synonyms — no descriptor check needed; always expand
+  if (["united states", "us", "usa", "u s a", "america"].some((s) => requested === s || requested.includes(s))) {
+    ["us", "usa", "u s a", "united states", "united states of america", "america"].forEach((item) => expanded.add(normalize(item)));
+  }
+  if (["united kingdom", "uk", "gb", "great britain", "england"].some((s) => requested === s || requested.includes(s))) {
+    ["uk", "gb", "united kingdom", "great britain"].forEach((item) => expanded.add(normalize(item)));
+  }
+  if (["canada", "ca"].some((s) => requested === s)) {
+    ["canada", "ca"].forEach((item) => expanded.add(normalize(item)));
   }
 
+  // State name → abbreviation
+  const stateAbbr = STATE_ABBREVIATIONS[requested];
+  if (stateAbbr) {
+    expanded.add(normalize(stateAbbr));
+  }
+  // Abbreviation → state name (reverse lookup)
+  const stateName = Object.entries(STATE_ABBREVIATIONS).find(([, abbr]) => normalize(abbr) === requested)?.[0];
+  if (stateName) {
+    expanded.add(stateName);
+  }
+
+  // Citizenship / work auth variations
   if (requested === "u s citizen" || requested === "us citizen" || requested.includes("citizen")) {
-    ["yes", "u s citizen", "us citizen", "citizen"].forEach((item) => expanded.add(normalize(item)));
+    ["yes", "u s citizen", "us citizen", "citizen", "united states citizen"].forEach((item) => expanded.add(normalize(item)));
+  }
+  if (requested.includes("authorized") || requested.includes("authorization")) {
+    ["authorized", "authorized to work", "yes i am authorized", "yes"].forEach((item) => expanded.add(normalize(item)));
+  }
+
+  // Phone dialing codes
+  if (requested === "+1" || requested === "1") {
+    ["+1", "1", "us 1", "united states 1"].forEach((item) => expanded.add(normalize(item)));
   }
 
   return expanded;
 }
+
+// US state name → abbreviation map for select matching
+const STATE_ABBREVIATIONS = {
+  "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+  "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+  "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+  "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+  "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+  "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+  "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+  "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+  "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+  "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+  "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+  "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
+  "wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC",
+};
 
 function optionMatches(option, requestedSet, exact) {
   const optionText = normalize(option.text);
@@ -576,14 +1017,13 @@ function optionMatches(option, requestedSet, exact) {
       }
       continue;
     }
-    if (
-      optionText.includes(requested)
-      || requested.includes(optionText)
-      || optionValue.includes(requested)
-      || requested.includes(optionValue)
-    ) {
-      return true;
-    }
+    // Require minimum length of 3 on the shorter side to prevent spurious
+    // substring matches (e.g. "in" matching inside "united states").
+    const minLen = 3;
+    if (optionText.includes(requested) && requested.length >= minLen) return true;
+    if (requested.includes(optionText) && optionText.length >= minLen) return true;
+    if (optionValue.includes(requested) && requested.length >= minLen) return true;
+    if (requested.includes(optionValue) && optionValue.length >= minLen) return true;
   }
 
   return false;
@@ -830,7 +1270,12 @@ function isUsableField(field) {
     return false;
   }
 
-  if (field.hasAttribute("disabled") || field.hasAttribute("readonly")) {
+  if (field.hasAttribute("disabled")) {
+    return false;
+  }
+  // React-Select and similar custom dropdowns render readonly inputs to prevent
+  // free-text typing, but the input must still receive clicks for option selection.
+  if (field.hasAttribute("readonly") && !isCustomSelectTrigger(field)) {
     return false;
   }
 
@@ -946,15 +1391,36 @@ function matchesChoice(optionText, desired) {
     return false;
   }
 
+  // Determine whether the option text is semantically positive or negative.
+  // Negative = contains a negation word that flips the meaning.
+  const hasNegation = /\b(not|no|won t|will not|do not|don t|cannot|can t|never|without|decline)\b/.test(optionText);
+
   if (desired === "yes") {
-    return matchesAny(optionText, ["yes", "true", "i do", "authorized", "eligible"]);
-  }
-  if (desired === "no") {
-    return matchesAny(optionText, ["no", "false", "i do not", "not authorized", "not eligible"]);
+    // Exact positive labels
+    if (optionText === "yes" || optionText === "true" || optionText === "y") return true;
+    // Positive phrases without negation language
+    if (!hasNegation && matchesAny(optionText, [
+      "i do", "i am", "i will", "authorized", "eligible", "i plan",
+      "i currently", "i have", "prefer", "yes i", "i agree",
+    ])) return true;
+    return false;
   }
 
+  if (desired === "no") {
+    // Exact negative labels
+    if (optionText === "no" || optionText === "false" || optionText === "n") return true;
+    // Any option containing negation language is the "No" answer on yes/no questions.
+    // e.g. "I am not a protected veteran", "I will not require sponsorship",
+    //      "I do not require a work permit", "Decline to state"
+    if (hasNegation) return true;
+    return false;
+  }
+
+  // Non-boolean desired: substring match with minimum length guard
   const normalizedOption = normalize(optionText);
-  return normalizedOption.includes(desired) || desired.includes(normalizedOption);
+  const minLen = 3;
+  return (normalizedOption.includes(desired) && desired.length >= minLen)
+    || (desired.includes(normalizedOption) && normalizedOption.length >= minLen);
 }
 
 function fireInputEvents(element) {
@@ -1086,6 +1552,53 @@ function cssEscape(value) {
     return window.CSS.escape(value);
   }
   return String(value).replace(/["\\]/g, "\\$&");
+}
+
+/**
+ * Returns true when a checkbox/radio option label semantically represents the
+ * given value.  Used to avoid the "all checkboxes checked" bug where
+ * inferYesNoValue("United States") = "Yes" was applied to every country checkbox.
+ */
+function semanticChoiceMatch(optionLabel, value) {
+  if (!optionLabel || !value) return false;
+
+  // Exact or simple substring
+  if (optionLabel === value) return true;
+  if (optionLabel.includes(value) && value.length > 3) return true;
+  if (value.includes(optionLabel) && optionLabel.length > 3) return true;
+
+  // Country synonym groups — a "US" checkbox should match value "united states"
+  const synonymGroups = [
+    ["united states", "united states of america", "usa", "us", "u s a", "america"],
+    ["united kingdom", "uk", "great britain", "gb", "england"],
+    ["canada", "ca"],
+    ["australia", "au"],
+    ["germany", "de", "deutschland"],
+    ["france", "fr"],
+    ["india", "in"],
+  ];
+  for (const group of synonymGroups) {
+    const labelInGroup = group.some((s) => optionLabel === s || (s.length > 2 && optionLabel.includes(s)));
+    const valueInGroup = group.some((s) => value === s || (s.length > 2 && value.includes(s)));
+    if (labelInGroup && valueInGroup) return true;
+  }
+
+  // Work authorization: "authorized" label matches "authorized to work in the united states" value
+  if (value.includes("authorized") && optionLabel.includes("authorized")) return true;
+
+  return false;
+}
+
+/** Returns the E.164 dialing prefix for a country string, defaulting to +1. */
+function phoneDialCode(country) {
+  const c = normalize(String(country || ""));
+  if (c.includes("united states") || c.includes("usa") || c === "us" || c.includes("canada")) return "+1";
+  if (c.includes("united kingdom") || c === "gb" || c === "uk") return "+44";
+  if (c.includes("australia") || c === "au") return "+61";
+  if (c.includes("india") || c === "in") return "+91";
+  if (c.includes("germany") || c === "de") return "+49";
+  if (c.includes("france") || c === "fr") return "+33";
+  return "+1"; // default
 }
 
 function tryClickSubmit() {
