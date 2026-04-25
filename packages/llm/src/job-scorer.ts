@@ -64,8 +64,10 @@ export class JobScorerService {
       ...buildJobScorerPrompt(input),
       fallback,
     });
-    await recordSemanticCacheValue("job-scorer", cacheInput, result);
-    return result;
+    // Merge with fallback so fields the LLM omits (e.g. weightedBreakdown) are always present
+    const merged: FitAssessment = { ...fallback, ...result };
+    await recordSemanticCacheValue("job-scorer", cacheInput, merged);
+    return merged;
   }
 }
 

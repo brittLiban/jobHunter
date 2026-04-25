@@ -55,6 +55,8 @@ enum JobSourceKind {
   ASHBY
   LEVER
   WORKABLE
+  REMOTEOK
+  ADZUNA
   COMPANY_SITE
   EXTENSION
 }

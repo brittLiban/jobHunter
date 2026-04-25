@@ -580,10 +580,9 @@ function optionalDateValue(value: Date | null | undefined) {
 }
 
 function toRequiredJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
-  if (value === null) {
-    return Prisma.JsonNull;
+  if (value === null || value === undefined) {
+    return {} as Prisma.InputJsonValue;
   }
-
   return value as Prisma.InputJsonValue;
 }
 

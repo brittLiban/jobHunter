@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { AutofillLaunchForm } from "@/components/autofill-launch-form";
+import { ScraperStatusPoller } from "@/components/scraper-status-poller";
 import { StatusPill } from "@/components/status-pill";
 import { requireOnboardedUser } from "@/lib/auth";
 import {
@@ -39,6 +40,8 @@ export default async function DashboardPage({
       scraperRunning={workerStatus.running}
       attentionCount={attentionApps.length}
     >
+      <ScraperStatusPoller initialRunning={workerStatus.running} />
+
       {successNotice ? (
         <div className="notice notice-success">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -293,11 +296,13 @@ export default async function DashboardPage({
 
 function ScraperBoardGrid({ lastResult }: { lastResult: { discoveredJobs: number } | null }) {
   const sources = [
-    { key: "greenhouse", label: "Greenhouse", abbr: "GH", color: "#22c55e" },
-    { key: "ashby",      label: "Ashby",      abbr: "AS", color: "#6366f1" },
-    { key: "lever",      label: "Lever",      abbr: "LV", color: "#f97316" },
-    { key: "workable",   label: "Workable",   abbr: "WK", color: "#0ea5e9" },
-    { key: "mock",       label: "Mock",       abbr: "MK", color: "#a855f7" },
+    { key: "greenhouse", label: "Greenhouse",   abbr: "GH", color: "#22c55e", desc: "80+ company boards" },
+    { key: "ashby",      label: "Ashby",        abbr: "AS", color: "#6366f1", desc: "30+ company boards" },
+    { key: "lever",      label: "Lever",        abbr: "LV", color: "#f97316", desc: "20+ company boards" },
+    { key: "workable",   label: "Workable",     abbr: "WK", color: "#0ea5e9", desc: "Company boards" },
+    { key: "remoteok",   label: "RemoteOK",     abbr: "RO", color: "#10b981", desc: "300-500 remote jobs" },
+    { key: "adzuna",     label: "Adzuna",       abbr: "AZ", color: "#8b5cf6", desc: "Indeed · LinkedIn · Glassdoor" },
+    { key: "mock",       label: "Mock",         abbr: "MK", color: "#94a3b8", desc: "Demo data" },
   ];
 
   return (
@@ -316,9 +321,8 @@ function ScraperBoardGrid({ lastResult }: { lastResult: { discoveredJobs: number
             </div>
           </div>
           <div className="scraper-board-meta">
-            {lastResult
-              ? <>Last run: <strong>{lastResult.discoveredJobs}</strong> total</>
-              : "Not yet run"}
+            {"desc" in src ? src.desc : ""}
+            {lastResult ? <><br />Last: <strong>{lastResult.discoveredJobs}</strong> total</> : ""}
           </div>
           <form action="/api/worker/run" method="post">
             <input type="hidden" name="source" value={src.key} />

@@ -31,6 +31,8 @@ export const jobSourceKinds = [
   "ashby",
   "lever",
   "workable",
+  "remoteok",
+  "adzuna",
   "company_site",
   "extension",
 ] as const;

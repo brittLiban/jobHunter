@@ -242,8 +242,8 @@ export async function runPipeline(options: PipelineOptions = {}) {
         fitScore: score.fitScore,
         decision: score.decision === "apply",
         confidence: score.confidence,
-        topMatches: score.topMatches,
-        majorGaps: score.majorGaps,
+        topMatches: toStringArray(score.topMatches),
+        majorGaps:  toStringArray(score.majorGaps),
         weightedBreakdown: score.weightedBreakdown,
         ruleBreakdown: {
           passed: ruleEvaluation.passed,
@@ -1079,4 +1079,20 @@ function mergeUserBoards(
     lever: [...lever],
     workable: [...workable],
   };
+}
+
+
+/** Normalize LLM output — Ollama sometimes returns objects instead of strings */
+function toStringArray(arr: unknown[]): string[] {
+  return arr.map((item) => {
+    if (typeof item === "string") return item;
+    if (typeof item === "object" && item !== null) {
+      const obj = item as Record<string, unknown>;
+      // Common LLM patterns: {candidateSkill, jobRequirement} or {match} or {gap}
+      return String(
+        obj.candidateSkill ?? obj.match ?? obj.gap ?? obj.text ?? obj.description ?? JSON.stringify(item)
+      );
+    }
+    return String(item);
+  });
 }
