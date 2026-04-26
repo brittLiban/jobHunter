@@ -38,8 +38,8 @@ export function ScraperStatusPoller({ initialRunning }: { initialRunning: boolea
         setStatus(data);
 
         if (wasRunning.current && !data.running) {
-          // Pipeline just finished — hard refresh to show results
-          window.location.reload();
+          // Pipeline just finished — go to dashboard to show results
+          window.location.href = "/dashboard";
         }
         wasRunning.current = data.running;
       } catch { /* network blip — ignore */ }

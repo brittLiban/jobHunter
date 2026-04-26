@@ -82,6 +82,9 @@ export const jobPreferencesSchema = z.object({
   ashbyBoards: z.array(z.string().min(1)).default([]),
   leverBoards: z.array(z.string().min(1)).default([]),
   workableBoards: z.array(z.string().min(1)).default([]),
+  // Aggregator source config
+  remoteokTags: z.array(z.string().min(1)).default([]),
+  adzunaQueries: z.array(z.object({ keywords: z.string(), location: z.string().optional() })).default([]),
 });
 
 export const jobPostingSchema = z.object({

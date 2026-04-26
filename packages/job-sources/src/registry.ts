@@ -51,7 +51,7 @@ export async function discoverJobsForTargets(targets: SourceDiscoveryTarget[]): 
 // Invalid slugs are silently ignored (the API returns 404 / empty).
 
 /** ~80 companies using Greenhouse */
-const DEFAULT_GREENHOUSE: string[] = [
+export const DEFAULT_GREENHOUSE_BOARDS: string[] = [
   // Fintech / Payments
   "stripe", "brex", "plaid", "robinhood", "coinbase", "chime", "mercury",
   "ramp", "gusto", "rippling", "adyen", "klarna",
@@ -75,7 +75,7 @@ const DEFAULT_GREENHOUSE: string[] = [
 ];
 
 /** ~30 companies using Ashby */
-const DEFAULT_ASHBY: string[] = [
+export const DEFAULT_ASHBY_BOARDS: string[] = [
   // Dev tools / infra
   "vercel", "linear", "retool", "raycast", "supabase", "planetscale",
   "neon", "railway", "fly",
@@ -90,14 +90,14 @@ const DEFAULT_ASHBY: string[] = [
 ];
 
 /** ~20 companies using Lever */
-const DEFAULT_LEVER: string[] = [
+export const DEFAULT_LEVER_BOARDS: string[] = [
   "box", "perplexityai", "yelp", "eventbrite", "squarespace",
   "thumbtack", "lattice", "greenhouse", "benchling", "mixmax",
   "clearbit", "gem", "ripple", "openai",
 ];
 
 /** ~10 companies using Workable */
-const DEFAULT_WORKABLE: string[] = [
+export const DEFAULT_WORKABLE_BOARDS: string[] = [
   "hotjar", "typeform", "kayako", "workable", "personio",
 ];
 
@@ -121,10 +121,10 @@ const DEFAULT_REMOTEOK_TAGS = "engineer,typescript,python,react,golang,rust,devo
 // ─── Public builders ─────────────────────────────────────────────────────────
 
 export function buildDefaultSourceTargetsFromEnv(): SourceDiscoveryTarget[] {
-  const greenhouse = parseList(process.env.JOBHUNTER_GREENHOUSE_BOARDS, DEFAULT_GREENHOUSE);
-  const ashby      = parseList(process.env.JOBHUNTER_ASHBY_BOARDS, DEFAULT_ASHBY);
-  const lever      = parseList(process.env.JOBHUNTER_LEVER_SITES, DEFAULT_LEVER);
-  const workable   = parseList(process.env.JOBHUNTER_WORKABLE_COMPANIES, DEFAULT_WORKABLE);
+  const greenhouse = parseList(process.env.JOBHUNTER_GREENHOUSE_BOARDS, DEFAULT_GREENHOUSE_BOARDS);
+  const ashby      = parseList(process.env.JOBHUNTER_ASHBY_BOARDS, DEFAULT_ASHBY_BOARDS);
+  const lever      = parseList(process.env.JOBHUNTER_LEVER_SITES, DEFAULT_LEVER_BOARDS);
+  const workable   = parseList(process.env.JOBHUNTER_WORKABLE_COMPANIES, DEFAULT_WORKABLE_BOARDS);
 
   // Adzuna queries: "keywords:location" pairs, comma-separated
   const rawAdzuna = process.env.JOBHUNTER_ADZUNA_QUERIES;

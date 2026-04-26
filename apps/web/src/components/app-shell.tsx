@@ -14,6 +14,17 @@ const NAV_LINKS = [
     ),
   },
   {
+    href: "/scraper",
+    label: "Scraper",
+    icon: (
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 8h2M8 3v2M13 8h-2M8 13v-2" />
+        <circle cx="8" cy="8" r="2.5" />
+        <path strokeLinecap="round" d="M5.5 5.5L4 4M10.5 5.5L12 4M10.5 10.5L12 12M5.5 10.5L4 12" />
+      </svg>
+    ),
+  },
+  {
     href: "/jobs",
     label: "Discovery",
     icon: (

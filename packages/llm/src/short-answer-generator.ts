@@ -64,7 +64,22 @@ export class ShortAnswerGeneratorService {
       ...buildShortAnswerPrompt(input),
       fallback,
     });
-    await recordSemanticCacheValue("short-answer-generator", cacheInput, result);
-    return result;
+    // Merge with fallback — Ollama sometimes omits fields or returns malformed items
+    const merged: GeneratedAnswerSet = {
+      items: Array.isArray(result.items) && result.items.length > 0
+        ? result.items.map((item, i) => {
+            const fb = fallback.items[i] ?? fallback.items[0];
+            return {
+              kind: item.kind ?? fb.kind,
+              question: typeof item.question === "string" ? item.question : fb.question,
+              answer: typeof item.answer === "string" && item.answer.trim()
+                ? item.answer
+                : fb.answer,
+            };
+          })
+        : fallback.items,
+    };
+    await recordSemanticCacheValue("short-answer-generator", cacheInput, merged);
+    return merged;
   }
 }

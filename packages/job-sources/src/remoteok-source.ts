@@ -73,6 +73,13 @@ export class RemoteOKJobSource implements JobSourceAdapter {
         const salaryMin = parseSalary(job.salary_min);
         const salaryMax = parseSalary(job.salary_max);
 
+        // RemoteOK is a remote-only board. Normalize location so it always
+        // passes remote location checks (some listings say "Anywhere", "USA Only", etc.)
+        const rawLocation = String(job.location ?? "").toLowerCase();
+        const normalizedLocation = rawLocation && !rawLocation.includes("remote")
+          ? `Remote${rawLocation ? ` (${job.location})` : ""}`
+          : String(job.location ?? "Remote");
+
         return normalizeJobPosting({
           id: String(job.id ?? job.slug ?? url),
           externalId: String(job.id ?? ""),
@@ -80,7 +87,7 @@ export class RemoteOKJobSource implements JobSourceAdapter {
           sourceName: target.sourceName,
           company: String(job.company ?? "Unknown"),
           title: String(job.position ?? "Unknown Role"),
-          location: String(job.location ?? "Remote"),
+          location: normalizedLocation,
           salaryMin,
           salaryMax,
           salaryCurrency: String(job.currency ?? "USD"),

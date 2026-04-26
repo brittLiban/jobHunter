@@ -25,6 +25,21 @@ const GREATER_SEATTLE_TERMS = [
   "tacoma",
 ];
 
+// Location strings that mean "remote / location-agnostic" across various job boards
+const REMOTE_EQUIVALENT_TERMS = [
+  "remote",
+  "anywhere",
+  "worldwide",
+  "work from home",
+  "wfh",
+  "distributed",
+  "fully remote",
+  "100% remote",
+  "globally",
+  "global",
+  "location independent",
+];
+
 const ENTRY_TERMS = [
   "new grad",
   "entry",
@@ -289,28 +304,111 @@ function computeExperienceScore(seniority: JobSeniority, yearsOfExperience: numb
   }
 }
 
-function matchesTargetRoles(title: string, targetRoles: string[]) {
+// Synonym groups: if a target role or a job title contains any term in a group,
+// they're considered the same concept. This lets "Software Engineer" also match
+// "Software Developer", "SWE", "Programmer", etc. without the user having to
+// list every variant.
+const ROLE_SYNONYM_GROUPS: readonly string[][] = [
+  // Generic engineering / development
+  ["engineer", "developer", "dev", "programmer", "swe", "software"],
+  // Frontend
+  ["frontend", "front-end", "front end", "ui engineer", "ui developer", "web developer"],
+  // Backend
+  ["backend", "back-end", "back end", "server-side", "api engineer"],
+  // Full-stack
+  ["full stack", "full-stack", "fullstack", "generalist engineer"],
+  // Mobile
+  ["ios", "android", "mobile engineer", "mobile developer", "react native", "flutter"],
+  // Data / ML
+  ["data scientist", "data engineer", "machine learning", "ml engineer", "ai engineer", "deep learning", "nlp engineer"],
+  // DevOps / Platform / SRE
+  ["devops", "platform engineer", "sre", "site reliability", "infrastructure engineer", "cloud engineer"],
+  // Security
+  ["security engineer", "appsec", "application security", "devsecops", "infosec"],
+  // QA / Test
+  ["qa engineer", "quality engineer", "test engineer", "sdet", "automation engineer"],
+  // Product / Design (for non-eng roles)
+  ["product manager", "product owner", "pm"],
+  ["designer", "ux engineer", "ui/ux", "product designer"],
+];
+
+// Words that are modifiers, not the role identity — ignored when matching
+const SENIORITY_MODIFIERS = new Set([
+  "senior", "sr", "junior", "jr", "lead", "principal", "staff", "associate",
+  "mid", "entry", "intern", "internship", "new grad", "ng", "i", "ii", "iii",
+  "1", "2", "3", "l3", "l4", "l5", "l6",
+]);
+
+function matchesTargetRoles(title: string, targetRoles: string[]): boolean {
   const normalizedTitle = title.toLowerCase();
-  return targetRoles.some((role) => normalizedTitle.includes(role.toLowerCase()));
+
+  return targetRoles.some((role) => {
+    const normalizedRole = role.toLowerCase().trim();
+
+    // 1. Direct substring match (fastest path)
+    if (normalizedTitle.includes(normalizedRole)) return true;
+
+    // 2. Expand the role into synonym terms and check each
+    const roleTerms = expandRoleTerms(normalizedRole);
+    const titleTerms = expandRoleTerms(normalizedTitle);
+
+    // The title is a match if it shares at least one expanded synonym group
+    // with the target role (e.g. "engineer" and "developer" are in the same group)
+    return roleTerms.some((rt) => titleTerms.some((tt) => rt === tt));
+  });
 }
 
-function matchesLocationPreferences(jobLocation: string, locations: string[], country: string) {
+function expandRoleTerms(text: string): string[] {
+  const terms: string[] = [];
+
+  // Add the words themselves (minus seniority modifiers)
+  const words = text.split(/\s+/).filter((w) => w && !SENIORITY_MODIFIERS.has(w));
+  terms.push(...words);
+
+  // For each synonym group, if any member appears in the text, add ALL members
+  for (const group of ROLE_SYNONYM_GROUPS) {
+    if (group.some((synonym) => text.includes(synonym))) {
+      terms.push(...group);
+    }
+  }
+
+  return [...new Set(terms)];
+}
+
+function matchesLocationPreferences(jobLocation: string, locations: string[], _country: string) {
   const normalizedLocation = jobLocation.toLowerCase();
 
   return locations.some((location) => {
-    const normalizedPreference = location.toLowerCase();
+    const normalizedPreference = location.toLowerCase().trim();
     if (!normalizedPreference) {
       return false;
     }
 
-    if (normalizedPreference.includes("remote")) {
-      return normalizedLocation.includes("remote") && matchesCountryScope(normalizedLocation, country);
+    // "Remote" — match any job that signals remote work on any job board.
+    // To restrict to a specific country add it to locations, e.g. "Remote, United States".
+    if (normalizedPreference === "remote") {
+      return (
+        containsAny(normalizedLocation, REMOTE_EQUIVALENT_TERMS) ||
+        normalizedLocation.trim() === ""
+      );
     }
 
+    // "Remote, <qualifier>" e.g. "Remote, United States" or "Remote Europe"
+    // Job must be remote AND location must contain the qualifier part.
+    if (normalizedPreference.startsWith("remote")) {
+      const qualifier = normalizedPreference.replace(/^remote[,\s]+/, "").trim();
+      const isRemoteJob =
+        containsAny(normalizedLocation, REMOTE_EQUIVALENT_TERMS) ||
+        normalizedLocation.trim() === "";
+      return isRemoteJob && (qualifier === "" || normalizedLocation.includes(qualifier));
+    }
+
+    // Greater Seattle metro expansion
     if (isGreaterSeattlePreference(normalizedPreference)) {
       return GREATER_SEATTLE_TERMS.some((term) => normalizedLocation.includes(term));
     }
 
+    // Default: substring match — works for any city, state, country the user types
     return normalizedLocation.includes(normalizedPreference);
   });
 }
@@ -340,36 +438,6 @@ function matchesKeywordControls(job: JobPosting, includeKeywords: string[], excl
   };
 }
 
-function matchesCountryScope(location: string, country: string) {
-  const normalizedCountry = country.toLowerCase();
-  if (!normalizedCountry.includes("united states")) {
-    return true;
-  }
-
-  if (containsAny(location, ["united states", "u.s.", "usa", "us-only", "within u.s.", "north america"])) {
-    return true;
-  }
-
-  return !containsAny(location, [
-    "ireland",
-    "united kingdom",
-    "uk",
-    "london",
-    "israel",
-    "tel aviv",
-    "dublin",
-    "germany",
-    "berlin",
-    "france",
-    "canada",
-    "toronto",
-    "australia",
-    "india",
-    "singapore",
-    "emea",
-    "europe",
-  ]);
-}
 
 function isGreaterSeattlePreference(value: string) {
   return value.includes("seattle") || value.includes("bellevue") || value.includes("greater seattle");

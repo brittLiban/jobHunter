@@ -201,6 +201,8 @@ function toJobPreferences(context: AutomationContext): JobPreferences {
     ashbyBoards: [],
     leverBoards: [],
     workableBoards: [],
+    remoteokTags: [],
+    adzunaQueries: [],
   };
 }
 

@@ -39,7 +39,17 @@ export class ResumeTailorService {
       ...buildResumeTailorPrompt(input),
       fallback,
     });
-    await recordSemanticCacheValue("resume-tailor", cacheInput, result);
-    return result;
+    const merged: TailoredResumeDraft = {
+      ...fallback,
+      ...result,
+      tailoredBullets: Array.isArray(result.tailoredBullets) && result.tailoredBullets.length > 0
+        ? result.tailoredBullets.map((b) => typeof b === "string" ? b : String((b as Record<string,unknown>).text ?? (b as Record<string,unknown>).bullet ?? JSON.stringify(b)))
+        : fallback.tailoredBullets,
+      keywordHighlights: Array.isArray(result.keywordHighlights) && result.keywordHighlights.length > 0
+        ? result.keywordHighlights.map((k) => typeof k === "string" ? k : String(k))
+        : fallback.keywordHighlights,
+    };
+    await recordSemanticCacheValue("resume-tailor", cacheInput, merged);
+    return merged;
   }
 }

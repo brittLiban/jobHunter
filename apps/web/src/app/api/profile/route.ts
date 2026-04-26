@@ -29,5 +29,7 @@ export async function POST(request: Request) {
   }
 
   await upsertOnboardingData(user.id, parsed.data, user.email);
-  return NextResponse.redirect(buildAppUrl("/profile?saved=1", request));
+  const returnTo = formData.get("returnTo");
+  const dest = typeof returnTo === "string" && returnTo.startsWith("/") ? `${returnTo}?saved=1` : "/profile?saved=1";
+  return NextResponse.redirect(buildAppUrl(dest, request));
 }

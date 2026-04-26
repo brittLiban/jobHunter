@@ -28,7 +28,7 @@ import {
   upsertDiscoveredJob,
   upsertUserScore,
 } from "@jobhunter/db";
-import { buildDefaultSourceTargetsFromEnv, buildSourceTargetsFromBoards, discoverJobsForTargets } from "@jobhunter/job-sources";
+import { buildDefaultSourceTargetsFromEnv, buildSourceTargetsFromBoards, discoverJobsForTargets, DEFAULT_GREENHOUSE_BOARDS, DEFAULT_ASHBY_BOARDS, DEFAULT_LEVER_BOARDS, DEFAULT_WORKABLE_BOARDS } from "@jobhunter/job-sources";
 import {
   ApplicationFieldAnswerSuggesterService,
   JobScorerService,
@@ -65,7 +65,7 @@ export async function runPipeline(options: PipelineOptions = {}) {
   const activeUsers = users.filter((user) => user.profile && user.preferences && user.resumes.length > 0);
   const enabledSourceKinds = new Set(
     activeUsers.flatMap((user) =>
-      (user.preferences?.sourceKinds ?? ["MOCK", "GREENHOUSE", "ASHBY", "LEVER", "WORKABLE"]).map((kind) => kind.toLowerCase()),
+      (user.preferences?.sourceKinds ?? ["MOCK", "GREENHOUSE", "ASHBY", "LEVER", "WORKABLE", "REMOTEOK", "ADZUNA"]).map((kind) => kind.toLowerCase()),
     ),
   );
 
@@ -513,6 +513,8 @@ function toJobPreferences(user: Awaited<ReturnType<typeof getOnboardedUsersForPi
     ashbyBoards: [],
     leverBoards: [],
     workableBoards: [],
+    remoteokTags: [],
+    adzunaQueries: [],
   };
 }
 
@@ -1043,13 +1045,18 @@ function resolveUserLlmConfig(
 
 function mergeUserBoards(
   users: Awaited<ReturnType<typeof getOnboardedUsersForPipeline>>,
-): { greenhouse: string[]; ashby: string[]; lever: string[]; workable: string[] } | null {
+): { greenhouse: string[]; ashby: string[]; lever: string[]; workable: string[]; adzunaIdentifiers?: Array<{ slug: string; companyName?: string }>; remoteokTags?: string[] } | null {
   const greenhouse = new Set<string>();
   const ashby = new Set<string>();
   const lever = new Set<string>();
   const workable = new Set<string>();
-
+  let explicitAdzunaQueries: Array<{ slug: string; companyName?: string }> = [];
+  let explicitRemoteokTags: string[] = [];
   let hasBoardConfig = false;
+
+  // Collect roles + locations across all users for auto-query generation
+  const allRoles = new Set<string>();
+  const allLocations = new Set<string>();
 
   for (const user of users) {
     const prefs = user.preferences as (typeof user.preferences & {
@@ -1057,28 +1064,119 @@ function mergeUserBoards(
       ashbyBoards?: string[];
       leverBoards?: string[];
       workableBoards?: string[];
+      adzunaQueries?: Array<{ keywords: string; location?: string }>;
+      remoteokTags?: string[];
     }) | null | undefined;
 
-    if (!prefs) {
-      continue;
-    }
+    if (!prefs) continue;
 
     (prefs.greenhouseBoards ?? []).forEach((b) => { greenhouse.add(b); hasBoardConfig = true; });
     (prefs.ashbyBoards ?? []).forEach((b) => { ashby.add(b); hasBoardConfig = true; });
     (prefs.leverBoards ?? []).forEach((b) => { lever.add(b); hasBoardConfig = true; });
     (prefs.workableBoards ?? []).forEach((b) => { workable.add(b); hasBoardConfig = true; });
+
+    if (prefs.adzunaQueries?.length) {
+      prefs.adzunaQueries.forEach((q) => explicitAdzunaQueries.push({ slug: q.keywords, companyName: q.location }));
+    }
+    if (prefs.remoteokTags?.length) {
+      explicitRemoteokTags = prefs.remoteokTags;
+    }
+
+    // Collect roles and locations for auto-generation
+    (user.preferences?.targetRoles ?? ["software engineer"]).forEach((r) => allRoles.add(r.toLowerCase()));
+    (user.preferences?.targetLocations ?? ["remote"]).forEach((l) => allLocations.add(l));
   }
 
-  if (!hasBoardConfig) {
-    return null;
-  }
+  // Auto-generate Adzuna queries from roles × locations if none were manually configured.
+  // This means users never have to write query syntax — just set their role and location.
+  const adzunaQueries = explicitAdzunaQueries.length > 0
+    ? explicitAdzunaQueries
+    : autoGenerateAdzunaQueries([...allRoles], [...allLocations]);
+
+  // Auto-generate RemoteOK tags from roles if none were manually set.
+  const remoteokTags = explicitRemoteokTags.length > 0
+    ? explicitRemoteokTags
+    : autoGenerateRemoteokTags([...allRoles]);
 
   return {
-    greenhouse: [...greenhouse],
-    ashby: [...ashby],
-    lever: [...lever],
-    workable: [...workable],
+    // If the user hasn't configured custom slugs, fall back to the full default lists
+    // so we always scrape 130+ company boards.
+    greenhouse: greenhouse.size > 0 ? [...greenhouse] : DEFAULT_GREENHOUSE_BOARDS,
+    ashby:      ashby.size > 0     ? [...ashby]      : DEFAULT_ASHBY_BOARDS,
+    lever:      lever.size > 0     ? [...lever]       : DEFAULT_LEVER_BOARDS,
+    workable:   workable.size > 0  ? [...workable]    : DEFAULT_WORKABLE_BOARDS,
+    adzunaIdentifiers: adzunaQueries,
+    remoteokTags,
   };
+}
+
+/**
+ * Build Adzuna search queries from the user's target roles × target locations.
+ * Capped at 8 queries to stay within Adzuna's free-tier rate limit (250 req/month).
+ */
+function autoGenerateAdzunaQueries(
+  roles: string[],
+  locations: string[],
+): Array<{ slug: string; companyName?: string }> {
+  const adzunaLocations = [...new Set(
+    locations.map(extractAdzunaLocation).filter((l): l is string => l !== null),
+  )];
+
+  // If no usable location (e.g. only "Remote"), add one undefined entry for nationwide
+  if (adzunaLocations.length === 0) adzunaLocations.push("remote");
+
+  const queries: Array<{ slug: string; companyName?: string }> = [];
+  const topRoles = roles.slice(0, 4);
+  const topLocs  = adzunaLocations.slice(0, 2);
+
+  for (const role of topRoles) {
+    for (const loc of topLocs) {
+      queries.push({ slug: role, companyName: loc });
+      if (queries.length >= 8) return queries;
+    }
+  }
+  return queries;
+}
+
+/**
+ * Extract a city/region string that Adzuna can use as a `where` param.
+ * Returns "remote" for remote-only entries, or the city name, or null if unusable.
+ */
+function extractAdzunaLocation(location: string): string | null {
+  const norm = location.toLowerCase().trim();
+  if (!norm) return null;
+
+  // Pure "Remote" → pass "remote" so Adzuna appends it to keywords
+  if (norm === "remote") return "remote";
+
+  // "Remote, <qualifier>" — use the qualifier (e.g. "Remote, United States" → "united states")
+  const remoteQualifierMatch = norm.match(/^remote[,\s]+(.+)$/);
+  if (remoteQualifierMatch) {
+    const qualifier = remoteQualifierMatch[1]?.trim();
+    return qualifier ?? "remote";
+  }
+
+  // City/region (e.g. "Seattle, WA" → "seattle")
+  const city = norm.split(",")[0]?.trim();
+  return city ?? null;
+}
+
+/** Derive RemoteOK tag filters from target roles (e.g. "software engineer" → ["engineer"]). */
+function autoGenerateRemoteokTags(roles: string[]): string[] {
+  const TECH_TAGS = ["engineer", "developer", "dev", "frontend", "backend", "fullstack",
+    "typescript", "javascript", "python", "golang", "rust", "java", "kotlin",
+    "react", "node", "devops", "cloud", "mobile", "ios", "android",
+    "data", "ml", "ai", "security", "qa"];
+
+  const tags = new Set<string>();
+  for (const role of roles) {
+    for (const tag of TECH_TAGS) {
+      if (role.includes(tag)) tags.add(tag);
+    }
+  }
+  // Always include "engineer" as a broad catch-all for tech roles
+  tags.add("engineer");
+  return [...tags];
 }
 
 

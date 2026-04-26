@@ -43,7 +43,7 @@ export function preferencesFromFormData(formData: FormData): JobPreferences {
     dailyTargetVolume: Number(getString(formData, "dailyTargetVolume")),
     includeKeywords: splitList(getString(formData, "includeKeywords")),
     excludeKeywords: splitList(getString(formData, "excludeKeywords")),
-    sourceKinds: (sourceKinds.length > 0 ? sourceKinds : ["greenhouse", "ashby", "lever", "workable", "mock"]) as JobPreferences["sourceKinds"],
+    sourceKinds: (sourceKinds.length > 0 ? sourceKinds : ["greenhouse", "ashby", "lever", "workable", "remoteok", "adzuna", "mock"]) as JobPreferences["sourceKinds"],
     llmProvider: (llmProvider as JobPreferences["llmProvider"]) ?? undefined,
     llmModel: getOptionalString(formData, "llmModel"),
     llmBaseUrl: getOptionalString(formData, "llmBaseUrl"),
@@ -52,6 +52,8 @@ export function preferencesFromFormData(formData: FormData): JobPreferences {
     ashbyBoards: splitList(getString(formData, "ashbyBoards")),
     leverBoards: splitList(getString(formData, "leverBoards")),
     workableBoards: splitList(getString(formData, "workableBoards")),
+    remoteokTags: splitList(getString(formData, "remoteokTags")),
+    adzunaQueries: parseAdzunaQueries(getString(formData, "adzunaQueriesRaw")),
   };
 }
 
@@ -84,4 +86,15 @@ function getMultiValueList(formData: FormData, key: string) {
     .getAll(key)
     .map((value) => String(value).trim())
     .filter(Boolean);
+}
+
+function parseAdzunaQueries(raw: string): Array<{ keywords: string; location?: string }> {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [kw, loc] = line.split(":").map((p) => p.trim());
+      return loc ? { keywords: kw, location: loc } : { keywords: kw };
+    });
 }

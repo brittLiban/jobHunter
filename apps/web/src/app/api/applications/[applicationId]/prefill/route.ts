@@ -68,6 +68,8 @@ export async function GET(
       ashbyBoards: [],
       leverBoards: [],
       workableBoards: [],
+      remoteokTags: [],
+      adzunaQueries: [],
     },
     generatedAnswers: application.generatedAnswers.map((answer) => ({
       kind: answer.kind.toLowerCase() as "why_role" | "why_fit" | "anything_else" | "custom",

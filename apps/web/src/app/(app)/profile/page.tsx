@@ -210,7 +210,7 @@ export default async function ProfilePage({
                 <div className="form-section-title">Targeting</div>
                 <div className="form-grid" style={{ marginTop: 12 }}>
                   <SettingsField label="Target roles" name="targetRoles" defaultValue={listValue(prefs.targetRoles) || "Software Engineer"} placeholder="Software Engineer, Backend Engineer" hint="Comma-separated. Matched against job titles." />
-                  <SettingsField label="Target locations" name="locations" defaultValue={listValue(prefs.locations) || "Remote"} placeholder="Seattle, Remote, New York" hint="Comma-separated location strings." />
+                  <SettingsField label="Target locations" name="locations" defaultValue={listValue(prefs.locations) || "Remote"} placeholder="Remote, Seattle, WA, New York, NY" hint={'Comma-separated. "Remote" = any remote job worldwide. Narrow it: "Remote, United States" or "Remote, Europe". Add cities/regions to also match on-site roles.'} />
                   <SettingsField label="Include keywords" name="includeKeywords" defaultValue={listValue(prefs.includeKeywords)} placeholder="React, TypeScript, Node.js" hint="Jobs must contain at least one." />
                   <SettingsField label="Exclude keywords" name="excludeKeywords" defaultValue={listValue(prefs.excludeKeywords)} placeholder="PHP, Rails" hint="Jobs containing these are filtered out." />
                 </div>
@@ -262,18 +262,26 @@ export default async function ProfilePage({
 
               {/* Sources */}
               <div>
-                <div className="form-section-title" style={{ marginBottom: 12 }}>Enabled Sources</div>
+                <div className="form-section-title" style={{ marginBottom: 4 }}>Enabled Sources</div>
+                <p style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 12 }}>
+                  Choose which sources the scraper uses. Configure their details in the <a href="/profile?tab=boards" style={{ color: "var(--accent)" }}>Job Boards tab</a>.
+                </p>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   {[
-                    { value: "greenhouse", label: "Greenhouse" },
-                    { value: "ashby",      label: "Ashby" },
-                    { value: "lever",      label: "Lever" },
-                    { value: "workable",   label: "Workable" },
-                    { value: "mock",       label: "Mock/Demo" },
+                    { value: "greenhouse", label: "Greenhouse",   desc: "80+ company boards" },
+                    { value: "ashby",      label: "Ashby",        desc: "30+ company boards" },
+                    { value: "lever",      label: "Lever",        desc: "20+ company boards" },
+                    { value: "workable",   label: "Workable",     desc: "Company boards" },
+                    { value: "remoteok",   label: "RemoteOK",     desc: "Remote tech jobs — free" },
+                    { value: "adzuna",     label: "Adzuna",       desc: "Indeed · LinkedIn · Glassdoor" },
+                    { value: "mock",       label: "Mock/Demo",    desc: "Test data" },
                   ].map((opt) => (
-                    <label key={opt.value} className="checkbox-field" style={{ padding: "7px 12px", border: "1px solid var(--border)", borderRadius: "999px", background: sources.has(opt.value) ? "var(--accent-light)" : "var(--surface)" }}>
-                      <input type="checkbox" name="sourceKinds" value={opt.value} defaultChecked={sources.has(opt.value)} />
-                      <span style={{ fontSize: 13 }}>{opt.label}</span>
+                    <label key={opt.value} className="checkbox-field" style={{ padding: "7px 12px", border: "1px solid var(--border)", borderRadius: "var(--r-md)", background: sources.has(opt.value) ? "var(--accent-light)" : "var(--surface)", flexDirection: "column", gap: 2, alignItems: "flex-start", cursor: "pointer" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <input type="checkbox" name="sourceKinds" value={opt.value} defaultChecked={sources.has(opt.value)} />
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</span>
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--text-3)", paddingLeft: 20 }}>{opt.desc}</span>
                     </label>
                   ))}
                 </div>
@@ -356,23 +364,89 @@ export default async function ProfilePage({
       {tab === "boards" && (
         <form action="/api/profile" method="post" id="boards">
           {identityHidden}{discoveryHidden}{llmHidden}
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Job Board Slugs</div>
-              <div className="card-subtitle">
-                Which company boards to scrape per ATS. Find the slug in the board URL — e.g. <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>stripe</code> from <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>greenhouse.io/stripe</code>.
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+            {/* ATS company boards */}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title">ATS Company Boards</div>
+                  <div className="card-subtitle">
+                    Scrape specific company job boards. Leave blank to use the built-in list of 130+ companies.
+                    Find a slug in the board URL — e.g. <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>stripe</code> from <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>greenhouse.io/stripe</code>.
+                  </div>
+                </div>
+              </div>
+              <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <BoardField label="Greenhouse" name="greenhouseBoards" defaultValue={listValue(prefs.greenhouseBoards)} example="stripe, figma, notion, anthropic, cloudflare, databricks" color="#22c55e" />
+                <BoardField label="Ashby"      name="ashbyBoards"      defaultValue={listValue(prefs.ashbyBoards)}      example="vercel, retool, linear, raycast, supabase" color="#6366f1" />
+                <BoardField label="Lever"      name="leverBoards"      defaultValue={listValue(prefs.leverBoards)}      example="box, perplexityai, yelp" color="#f97316" />
+                <BoardField label="Workable"   name="workableBoards"   defaultValue={listValue(prefs.workableBoards)}   example="typeform, hotjar" color="#0ea5e9" />
               </div>
             </div>
-            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <div style={{ display: "grid", gap: 16 }}>
-                <BoardField label="Greenhouse boards" name="greenhouseBoards" defaultValue={listValue(prefs.greenhouseBoards)} example="stripe, figma, notion, anthropic" color="#22c55e" />
-                <BoardField label="Ashby boards"      name="ashbyBoards"      defaultValue={listValue(prefs.ashbyBoards)}      example="vercel, retool, linear, perplexity" color="#6366f1" />
-                <BoardField label="Lever boards"      name="leverBoards"      defaultValue={listValue(prefs.leverBoards)}      example="box, coinbase" color="#f97316" />
-                <BoardField label="Workable boards"   name="workableBoards"   defaultValue={listValue(prefs.workableBoards)}   example="typeform, hotjar" color="#0ea5e9" />
+
+            {/* RemoteOK */}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ background: "#10b98118", color: "#10b981", border: "1px solid #10b98130", borderRadius: "var(--r-sm)", padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>FREE</span>
+                    RemoteOK
+                  </div>
+                  <div className="card-subtitle">Aggregates 300–500 remote tech jobs per run. No API key needed.</div>
+                </div>
               </div>
-              <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 14 }}>
-                <button type="submit" className="btn btn-primary">Save board config</button>
+              <div className="card-body">
+                <div className="form-field">
+                  <label className="form-label">Tag filters</label>
+                  <input
+                    className="form-input"
+                    name="remoteokTags"
+                    defaultValue={listValue((prefs as Record<string,unknown>).remoteokTags as string[] | undefined) || "engineer,typescript,python,react,golang,devops"}
+                    placeholder="engineer, typescript, python, react"
+                    style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+                  />
+                  <span className="form-hint">Comma-separated tags. Jobs must match at least one. Leave blank to return all remote tech jobs.</span>
+                </div>
               </div>
+            </div>
+
+            {/* Adzuna */}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ background: "#8b5cf618", color: "#8b5cf6", border: "1px solid #8b5cf630", borderRadius: "var(--r-sm)", padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>API KEY</span>
+                    Adzuna — Indeed · LinkedIn · Glassdoor
+                  </div>
+                  <div className="card-subtitle">Searches millions of listings across all major job boards. Free tier: 250 req/month at <a href="https://developer.adzuna.com" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>developer.adzuna.com</a>.</div>
+                </div>
+              </div>
+              <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div className="notice notice-info">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6" /><path strokeLinecap="round" d="M8 7v4M8 5.5v.5" /></svg>
+                  <div>
+                    <p className="notice-title">One query per line</p>
+                    <p className="notice-body">Format: <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>job title : location</code>. Example: <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>software engineer : seattle</code></p>
+                  </div>
+                </div>
+                <div className="form-field">
+                  <label className="form-label">Search queries</label>
+                  <textarea
+                    className="form-textarea"
+                    name="adzunaQueriesRaw"
+                    rows={6}
+                    defaultValue={formatAdzunaQueries((prefs as Record<string,unknown>).adzunaQueries as Array<{keywords:string;location?:string}> | undefined)}
+                    placeholder={"software engineer : seattle\nsenior software engineer : remote\nfull stack engineer : seattle\nbackend engineer : remote"}
+                    style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+                  />
+                  <span className="form-hint">Each line is a separate search. Leave location blank for nationwide.</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <button type="submit" className="btn btn-primary">Save board config</button>
             </div>
           </div>
         </form>
@@ -486,8 +560,13 @@ function BoardField({
           placeholder={`e.g. ${example}`}
           style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
         />
-        <span className="form-hint">Comma-separated slugs. Leave blank to use env-var defaults.</span>
+        <span className="form-hint">Comma-separated slugs. Leave blank to use the built-in defaults (130+ companies).</span>
       </div>
     </div>
   );
+}
+
+function formatAdzunaQueries(queries: Array<{ keywords: string; location?: string }> | undefined): string {
+  if (!queries?.length) return "";
+  return queries.map((q) => q.location ? `${q.keywords} : ${q.location}` : q.keywords).join("\n");
 }
