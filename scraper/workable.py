@@ -9,14 +9,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 import httpx
 
 from .base import BaseJobScraper
-from .html_jobs import iter_workable_jobs, strip_html
+from .html_jobs import extract_salary_from_text, iter_workable_jobs, strip_html
+from .retry import fetch_with_retry
 
 logger = logging.getLogger(__name__)
 _WORKABLE_XML_URL = "https://www.workable.com/boards/workable.xml"
+_CACHE_TTL = 3600.0  # 1 hour
 
 
 class WorkableScraper(BaseJobScraper):
@@ -24,16 +27,24 @@ class WorkableScraper(BaseJobScraper):
 
     def __init__(self) -> None:
         self._jobs_cache: list[dict[str, str]] | None = None
+        self._cache_fetched_at: float = 0.0
         self._cache_lock = asyncio.Lock()
 
+    def _cache_is_valid(self) -> bool:
+        return (
+            self._jobs_cache is not None
+            and (time.monotonic() - self._cache_fetched_at) < _CACHE_TTL
+        )
+
     async def fetch_jobs(self, company_slug: str) -> list[dict]:
-        if self._jobs_cache is None:
+        if not self._cache_is_valid():
             async with self._cache_lock:
-                if self._jobs_cache is None:
+                if not self._cache_is_valid():
                     async with httpx.AsyncClient(timeout=90) as client:
                         try:
-                            resp = await client.get(_WORKABLE_XML_URL)
-                            resp.raise_for_status()
+                            resp = await fetch_with_retry(
+                                client, _WORKABLE_XML_URL, label="[Workable] "
+                            )
                         except httpx.HTTPStatusError as exc:
                             logger.error("[Workable] feed -> HTTP %s", exc.response.status_code)
                             return []
@@ -41,6 +52,8 @@ class WorkableScraper(BaseJobScraper):
                             logger.error("[Workable] feed -> request error: %s", exc)
                             return []
                     self._jobs_cache = iter_workable_jobs(resp.content)
+                    self._cache_fetched_at = time.monotonic()
+                    logger.info("[Workable] feed cached (%d jobs)", len(self._jobs_cache))
 
         company_name = company_slug.strip().lower()
         matches = [
@@ -61,14 +74,17 @@ class WorkableScraper(BaseJobScraper):
         if not location and str(raw.get("remote") or "").strip().lower() == "true":
             location = "Remote"
 
+        description = strip_html(raw.get("description", "") or "")
+        salary_min, salary_max = extract_salary_from_text(description)
+
         return {
             "title": raw.get("title", "Untitled"),
             "company": raw.get("company") or company_slug,
             "location": location,
-            "description": strip_html(raw.get("description", "") or ""),
+            "description": description,
             "url": raw.get("url", ""),
             "source": self.SOURCE_NAME,
             "raw_html": json.dumps(raw, default=str),
-            "salary_min": None,
-            "salary_max": None,
+            "salary_min": salary_min,
+            "salary_max": salary_max,
         }

@@ -12,16 +12,47 @@ export function buildJobScorerPrompt(input: {
   job: JobPosting;
   profile: StructuredProfile;
   resumeText: string;
+  threshold?: number;
 }): { systemPrompt: string; userPrompt: string } {
+  const threshold = input.threshold ?? 70;
   return {
-    systemPrompt:
-      "You score job fit conservatively. Respect hard business rules outside the model and never invent experience.",
+    systemPrompt: [
+      "You are a job-fit scoring engine. Score how well a candidate's resume matches a job posting on a scale of 0–100.",
+      "Be objective and evidence-based. A score of 70+ means the candidate meets most requirements and should apply.",
+      "Common tech skills (Python, TypeScript, APIs, cloud, Docker) score positively when present in both job and resume.",
+      "Entry-level and new-grad roles should score generously when the candidate has relevant internships or projects.",
+      "Return ONLY valid JSON matching the exact schema provided — no extra text, no markdown fences.",
+    ].join(" "),
     userPrompt: [
-      "Score the candidate for this job and return fit score, apply or skip decision, confidence, top matches, and major gaps.",
+      "Score this candidate for the job posting below. Return JSON only.",
+      "",
       `Candidate profile: ${JSON.stringify(input.profile)}`,
-      `Base resume: ${input.resumeText}`,
-      `Job posting: ${JSON.stringify(input.job)}`,
-    ].join("\n\n"),
+      "",
+      `Resume: ${input.resumeText.slice(0, 3000)}`,
+      "",
+      `Job posting: ${JSON.stringify({
+        company: input.job.company,
+        title: input.job.title,
+        location: input.job.location,
+        description: (input.job.description ?? "").slice(0, 2000),
+      })}`,
+      "",
+      "Response schema (return this exact shape, all fields required):",
+      JSON.stringify({
+        fitScore: "integer 0-100 — how well the candidate fits this specific job",
+        decision: `"apply" if fitScore >= ${threshold}, otherwise "skip"`,
+        confidence: "float 0.0-1.0 — your certainty in this score",
+        topMatches: ["up to 3 short strings listing strongest alignment points"],
+        majorGaps: ["up to 3 short strings listing the most significant gaps"],
+        weightedBreakdown: {
+          skillOverlap: "integer 0-100",
+          techStackOverlap: "integer 0-100",
+          roleAlignment: "integer 0-100",
+          experienceLevelMatch: "integer 0-100",
+          locationAndAuthorizationFit: "integer 0-100",
+        },
+      }, null, 2),
+    ].join("\n"),
   };
 }
 

@@ -310,7 +310,9 @@ function computeExperienceScore(seniority: JobSeniority, yearsOfExperience: numb
 // list every variant.
 const ROLE_SYNONYM_GROUPS: readonly string[][] = [
   // Generic engineering / development
-  ["engineer", "developer", "dev", "programmer", "swe", "software"],
+  // Note: "dev" intentionally excluded — it's too short and matches "development"
+  // in non-engineering titles like "Sales Development Representative".
+  ["engineer", "developer", "programmer", "swe", "software engineer", "software developer"],
   // Frontend
   ["frontend", "front-end", "front end", "ui engineer", "ui developer", "web developer"],
   // Backend
@@ -375,7 +377,7 @@ function expandRoleTerms(text: string): string[] {
   return [...new Set(terms)];
 }
 
-function matchesLocationPreferences(jobLocation: string, locations: string[], _country: string) {
+function matchesLocationPreferences(jobLocation: string, locations: string[], country: string) {
   const normalizedLocation = jobLocation.toLowerCase();
 
   return locations.some((location) => {
@@ -384,13 +386,22 @@ function matchesLocationPreferences(jobLocation: string, locations: string[], _c
       return false;
     }
 
-    // "Remote" — match any job that signals remote work on any job board.
-    // To restrict to a specific country add it to locations, e.g. "Remote, United States".
+    // "Remote" — match remote jobs that are compatible with the user's country.
+    // A job like "Remote - India" is NOT a match for a US-based user who says "Remote".
+    // To explicitly target a country, use "Remote, United States" instead.
     if (normalizedPreference === "remote") {
-      return (
+      const isRemoteJob =
         containsAny(normalizedLocation, REMOTE_EQUIVALENT_TERMS) ||
-        normalizedLocation.trim() === ""
-      );
+        normalizedLocation.trim() === "";
+      if (!isRemoteJob) return false;
+
+      // If the job location has a foreign qualifier (e.g. "Remote - India",
+      // "Remote (Berlin)"), reject it unless the qualifier matches the user's country.
+      const foreignQualifier = extractRemoteQualifier(normalizedLocation);
+      if (foreignQualifier && country) {
+        return isQualifierCompatibleWithCountry(foreignQualifier, country.toLowerCase());
+      }
+      return true;
     }
 
     // "Remote, <qualifier>" e.g. "Remote, United States" or "Remote Europe"
@@ -466,4 +477,103 @@ function extractMinimumYearsRequirement(value: string) {
   }
 
   return Math.min(...values);
+}
+
+// Country aliases used to match remote location qualifiers to the user's country
+const COUNTRY_ALIASES: Record<string, string[]> = {
+  "united states": ["us", "usa", "u.s.", "u.s.a.", "united states", "america", "amer", "us only", "us-only", "us based", "us-based"],
+  "canada":        ["ca", "can", "canada", "canadian"],
+  "united kingdom":["uk", "gb", "u.k.", "united kingdom", "britain", "england"],
+  "australia":     ["au", "aus", "australia", "australian"],
+  "germany":       ["de", "germany", "deutschland", "berlin", "munich"],
+  "india":         ["in", "india", "bangalore", "hyderabad", "pune", "mumbai", "delhi"],
+  "brazil":        ["br", "brazil", "brasil"],
+  "france":        ["fr", "france", "paris"],
+  "spain":         ["es", "spain", "españa", "madrid", "barcelona"],
+  "netherlands":   ["nl", "netherlands", "holland", "amsterdam"],
+  "poland":        ["pl", "poland", "warsaw", "krakow"],
+  "portugal":      ["pt", "portugal", "lisbon"],
+  "colombia":      ["co", "colombia"],
+  "argentina":     ["ar", "argentina"],
+  "mexico":        ["mx", "mexico"],
+  "singapore":     ["sg", "singapore"],
+  "japan":         ["jp", "japan", "tokyo"],
+};
+
+/**
+ * Extract the country/region qualifier from a remote location string.
+ * Returns the qualifier (lowercased) or null if the location is purely remote
+ * with no geographic restriction.
+ *
+ * Examples:
+ *   "remote - india"    → "india"
+ *   "remote (berlin)"   → "berlin"
+ *   "remote - us"       → "us"
+ *   "us/remote"         → "us"
+ *   "remote"            → null
+ *   "distributed"       → null
+ */
+function extractRemoteQualifier(location: string): string | null {
+  const loc = location.toLowerCase().trim();
+
+  // Purely remote / no qualifier
+  if (!loc || loc === "remote" || loc === "distributed" || loc === "worldwide" ||
+      loc === "anywhere" || loc === "global" || loc === "work from home" || loc === "wfh") {
+    return null;
+  }
+
+  // "remote - <qualifier>" or "remote – <qualifier>" or "remote — <qualifier>"
+  let match = loc.match(/^remote\s*[-–—]\s*(.+)$/);
+  if (match) return match[1]?.trim() ?? null;
+
+  // "remote (<qualifier>)" or "remote [<qualifier>]"
+  match = loc.match(/^remote\s*[([{]\s*([^\])}\s][^\])}]*)\s*[\])}]$/);
+  if (match) return match[1]?.trim() ?? null;
+
+  // "remote in <qualifier>" or "remote for <qualifier>"
+  match = loc.match(/^remote\s+(?:in|for)\s+(.+)$/);
+  if (match) return match[1]?.trim() ?? null;
+
+  // "<qualifier>/remote" or "<qualifier> remote"
+  match = loc.match(/^([^/,]+?)(?:\/remote|,?\s*remote)$/);
+  if (match) return match[1]?.trim() ?? null;
+
+  // "<qualifier>, remote" or "remote, <qualifier>"
+  match = loc.match(/^remote,\s*(.+)$/) || loc.match(/^(.+),\s*remote$/);
+  if (match) return match[1]?.trim() ?? null;
+
+  return null;
+}
+
+/**
+ * Return true if the extracted remote qualifier is geographically compatible
+ * with the user's home country (e.g. "us" is compatible with "united states").
+ */
+function isQualifierCompatibleWithCountry(qualifier: string, userCountry: string): boolean {
+  const q = qualifier.toLowerCase().trim();
+  const c = userCountry.toLowerCase().trim();
+
+  // Find the canonical country for the user
+  const userCanonical = Object.entries(COUNTRY_ALIASES).find(([canonical, aliases]) =>
+    canonical === c || aliases.includes(c),
+  )?.[0];
+
+  if (!userCanonical) {
+    // Unknown user country — be permissive to avoid over-filtering
+    return true;
+  }
+
+  const userAliases = COUNTRY_ALIASES[userCanonical] ?? [];
+
+  // Direct match against canonical + aliases
+  if (userCanonical === q || userAliases.includes(q)) return true;
+
+  // Check if q appears as part of a known FOREIGN country (reject it)
+  for (const [canonical, aliases] of Object.entries(COUNTRY_ALIASES)) {
+    if (canonical === userCanonical) continue;
+    if (canonical === q || aliases.includes(q)) return false;
+  }
+
+  // Unknown qualifier — be permissive
+  return true;
 }

@@ -18,6 +18,14 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
 
+# Matches salary ranges like: $120k-$150k, $120,000 - $150,000, $120K to $150K
+_SALARY_RANGE_RE = re.compile(
+    r"\$\s*(?P<lo>\d{1,3}(?:,\d{3})*(?:\.\d+)?)(?P<lo_k>[kK])?"
+    r"\s*(?:[-–—]|to)\s*"
+    r"\$\s*(?P<hi>\d{1,3}(?:,\d{3})*(?:\.\d+)?)(?P<hi_k>[kK])?"
+    r"(?:\s*(?:/\s*(?:yr|year|annually?)|\s*per\s+year))?",
+)
+
 _JSON_LD_RE = re.compile(
     r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
     re.IGNORECASE | re.DOTALL,
@@ -251,7 +259,7 @@ def generic_page_to_record(
         meta_description = meta.get("description") or meta.get("og:description") or ""
         description = _normalize_space(f"{meta_description} {description}")
 
-    if len(description) < 120:
+    if len(description) < 300:
         return None
 
     location = location_hint or ""
@@ -427,6 +435,36 @@ def _int_value(value: Any) -> int | None:
         return int(float(str(value)))
     except ValueError:
         return None
+
+
+def extract_salary_from_text(text: str) -> tuple[int | None, int | None]:
+    """
+    Scan free text for salary range patterns and return (min, max) as integers.
+
+    Handles patterns like:
+      $120k-$150k  |  $120,000 - $150,000  |  $120K to $150K
+    Returns (None, None) when no plausible range is found.
+    """
+    if not text:
+        return None, None
+
+    for match in _SALARY_RANGE_RE.finditer(text):
+        lo = _salary_str_to_int(match.group("lo"), bool(match.group("lo_k")))
+        hi = _salary_str_to_int(match.group("hi"), bool(match.group("hi_k")))
+        if lo is not None and hi is not None and 20_000 <= lo <= 1_000_000 and lo <= hi:
+            return lo, hi
+
+    return None, None
+
+
+def _salary_str_to_int(num_str: str, has_k: bool) -> int | None:
+    try:
+        val = float(num_str.replace(",", ""))
+    except ValueError:
+        return None
+    if has_k:
+        val *= 1000
+    return int(val)
 
 
 def _guess_location_from_text(text: str) -> str:

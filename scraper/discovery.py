@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable
 
 import config
@@ -20,6 +21,17 @@ from .lever import LeverScraper
 from .workable import WorkableScraper
 
 logger = logging.getLogger(__name__)
+
+# Strips punctuation for title dedup — keeps level distinctions (I/II/Senior/Lead)
+# but collapses abbreviation variants ("Eng." vs "Engineer", "Sr." vs "Sr")
+_TITLE_ABBREV = {
+    "eng.": "engineer",
+    "dev.": "developer",
+    "mgr.": "manager",
+    "sr.": "senior",
+    "jr.": "junior",
+}
+_TITLE_PUNCT_RE = re.compile(r"[^\w\s]")
 
 
 async def scrape_all_jobs() -> list[dict]:
@@ -36,7 +48,7 @@ async def scrape_all_jobs() -> list[dict]:
     direct_source_titles: set[tuple[str, str]] = set()
     for group in source_groups:
         if isinstance(group, Exception):
-            logger.error("[Scraper] discovery group failed: %s", group)
+            logger.error("[Scraper] discovery group failed: %s", group, exc_info=group)
             continue
         for job in group:
             normalized = _normalize_job(job)
@@ -44,7 +56,7 @@ async def scrape_all_jobs() -> list[dict]:
                 continue
             dedupe_key = (
                 normalized["company"].strip().lower(),
-                normalized["title"].strip().lower(),
+                _normalize_title_for_dedup(normalized["title"]),
             )
             if normalized["source"] == "company_site" and dedupe_key in direct_source_titles:
                 continue
@@ -120,11 +132,25 @@ async def _collect_named_source(scraper, names: list[str], label: str) -> list[d
     jobs: list[dict] = []
     for name, result in zip(names, results):
         if isinstance(result, Exception):
-            logger.error("[%s] %s failed: %s", label, name, result)
+            logger.error("[%s] %s failed: %s", label, name, result, exc_info=result)
             continue
         logger.info("[%s] %s: %d job(s)", label, name, len(result))
         jobs.extend(result)
     return jobs
+
+
+def _normalize_title_for_dedup(title: str) -> str:
+    """Normalize a job title for deduplication comparison.
+
+    Expands common abbreviations and strips punctuation so variants like
+    "Software Eng." and "Software Engineer" hash to the same key.
+    Level distinctions (Senior/Lead/I/II) are preserved intentionally.
+    """
+    t = title.lower()
+    for abbrev, expansion in _TITLE_ABBREV.items():
+        t = t.replace(abbrev, expansion)
+    t = _TITLE_PUNCT_RE.sub("", t)
+    return " ".join(t.split())
 
 
 def _normalize_job(job: dict) -> dict | None:

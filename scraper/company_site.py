@@ -27,9 +27,11 @@ from .html_jobs import (
     looks_like_job_link,
     normalize_job_url,
 )
+from .retry import fetch_with_retry
 
 logger = logging.getLogger(__name__)
 _USER_AGENT = "job-hunter/1.0 (+https://github.com/brittLiban/jobHunter)"
+_PAGE_BATCH_DELAY = 0.3  # seconds between crawl page batches
 _GENERIC_LINK_TEXT = {
     "",
     "jobs",
@@ -98,6 +100,7 @@ class CompanySiteScraper:
                         break
                     job_links.setdefault(url, title_hint)
 
+            first_batch = True
             while pending_pages and len(visited_pages) < self.max_pages:
                 batch: list[str] = []
                 while pending_pages and len(batch) < 4 and len(visited_pages) + len(batch) < self.max_pages:
@@ -105,6 +108,10 @@ class CompanySiteScraper:
                     if url in visited_pages:
                         continue
                     batch.append(url)
+
+                if not first_batch:
+                    await asyncio.sleep(_PAGE_BATCH_DELAY)
+                first_batch = False
 
                 html_results = await asyncio.gather(
                     *(self._fetch_text(client, url) for url in batch),
@@ -241,8 +248,9 @@ class CompanySiteScraper:
 
     async def _fetch_text(self, client: httpx.AsyncClient, url: str) -> str:
         try:
-            response = await client.get(url)
-            response.raise_for_status()
+            response = await fetch_with_retry(
+                client, url, label=f"[CompanySite] {self.company_name} "
+            )
         except httpx.HTTPStatusError as exc:
             logger.debug(
                 "[CompanySite] %s -> HTTP %s for %s",

@@ -14,12 +14,14 @@ import logging
 import httpx
 
 from .base import BaseJobScraper
-from .html_jobs import strip_html
+from .html_jobs import extract_salary_from_text, strip_html
+from .retry import fetch_with_retry
 
 logger = logging.getLogger(__name__)
 _LEVER_LIST_URL = "https://api.lever.co/v0/postings/{site_name}?mode=json&skip={skip}&limit={limit}"
 _LEVER_DETAIL_URL = "https://api.lever.co/v0/postings/{site_name}/{posting_id}?mode=json"
 _PAGE_SIZE = 100
+_BATCH_DELAY = 0.5  # seconds between detail-hydration batches
 
 
 class LeverScraper(BaseJobScraper):
@@ -28,12 +30,14 @@ class LeverScraper(BaseJobScraper):
     async def fetch_jobs(self, company_slug: str) -> list[dict]:
         records: list[dict] = []
         skip = 0
+        label = f"[Lever] {company_slug} "
         async with httpx.AsyncClient(timeout=30) as client:
             while True:
                 url = _LEVER_LIST_URL.format(site_name=company_slug, skip=skip, limit=_PAGE_SIZE)
                 try:
-                    resp = await client.get(url, headers={"Accept": "application/json"})
-                    resp.raise_for_status()
+                    resp = await fetch_with_retry(
+                        client, url, headers={"Accept": "application/json"}, label=label
+                    )
                 except httpx.HTTPStatusError as exc:
                     logger.error("[Lever] %s -> HTTP %s", company_slug, exc.response.status_code)
                     break
@@ -77,6 +81,8 @@ class LeverScraper(BaseJobScraper):
             or f"https://jobs.lever.co/{company_slug}/{raw.get('id', '')}"
         )
 
+        salary_min, salary_max = extract_salary_from_text(description)
+
         return {
             "title": raw.get("text", "Untitled"),
             "company": company_slug,
@@ -85,8 +91,8 @@ class LeverScraper(BaseJobScraper):
             "url": url,
             "source": self.SOURCE_NAME,
             "raw_html": json.dumps(raw, default=str),
-            "salary_min": None,
-            "salary_max": None,
+            "salary_min": salary_min,
+            "salary_max": salary_max,
         }
 
 
@@ -121,4 +127,6 @@ async def _gather_in_batches(tasks: list, batch_size: int) -> list:
     for index in range(0, len(tasks), batch_size):
         chunk = tasks[index : index + batch_size]
         results.extend(await asyncio.gather(*chunk))
+        if index + batch_size < len(tasks):
+            await asyncio.sleep(_BATCH_DELAY)
     return results

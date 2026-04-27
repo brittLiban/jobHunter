@@ -61,7 +61,7 @@ export class JobScorerService {
     }
 
     const result = await this.llm.generateObject({
-      ...buildJobScorerPrompt(input),
+      ...buildJobScorerPrompt({ ...input, threshold: input.threshold }),
       fallback,
     });
     // Merge with fallback so fields the LLM omits (e.g. weightedBreakdown) are always present

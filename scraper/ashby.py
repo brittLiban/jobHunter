@@ -13,9 +13,11 @@ import logging
 import httpx
 
 from .base import BaseJobScraper
+from .retry import fetch_with_retry
 
 logger = logging.getLogger(__name__)
 _ASHBY_URL = "https://api.ashbyhq.com/posting-api/job-board/{board_name}?includeCompensation=true"
+_LARGE_RESULT_THRESHOLD = 500
 
 
 class AshbyScraper(BaseJobScraper):
@@ -23,10 +25,10 @@ class AshbyScraper(BaseJobScraper):
 
     async def fetch_jobs(self, company_slug: str) -> list[dict]:
         url = _ASHBY_URL.format(board_name=company_slug)
+        label = f"[Ashby] {company_slug} "
         async with httpx.AsyncClient(timeout=30) as client:
             try:
-                resp = await client.get(url)
-                resp.raise_for_status()
+                resp = await fetch_with_retry(client, url, label=label)
             except httpx.HTTPStatusError as exc:
                 logger.error("[Ashby] %s -> HTTP %s", company_slug, exc.response.status_code)
                 return []
@@ -36,6 +38,12 @@ class AshbyScraper(BaseJobScraper):
 
         payload = resp.json()
         raw_jobs: list[dict] = payload.get("jobs", []) or []
+        if len(raw_jobs) >= _LARGE_RESULT_THRESHOLD:
+            logger.warning(
+                "[Ashby] %s: %d jobs returned — response may be truncated",
+                company_slug,
+                len(raw_jobs),
+            )
         logger.info("[Ashby] %s: %d job(s) fetched", company_slug, len(raw_jobs))
         return [self.parse_job(job, company_slug) for job in raw_jobs if job.get("isListed", True)]
 

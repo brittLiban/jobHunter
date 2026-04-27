@@ -11,12 +11,14 @@ import re
 import httpx
 
 from .base import BaseJobScraper
+from .retry import fetch_with_retry
 
 logger = logging.getLogger(__name__)
 
 _GREENHOUSE_URL = (
     "https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true"
 )
+_LARGE_RESULT_THRESHOLD = 500
 
 
 class GreenhouseScraper(BaseJobScraper):
@@ -25,10 +27,10 @@ class GreenhouseScraper(BaseJobScraper):
     async def fetch_jobs(self, company_slug: str) -> list[dict]:
         """Fetch all jobs for one Greenhouse company slug."""
         url = _GREENHOUSE_URL.format(company=company_slug)
+        label = f"[Greenhouse] {company_slug} "
         async with httpx.AsyncClient(timeout=30) as client:
             try:
-                resp = await client.get(url)
-                resp.raise_for_status()
+                resp = await fetch_with_retry(client, url, label=label)
             except httpx.HTTPStatusError as exc:
                 logger.error(
                     "[Greenhouse] %s -> HTTP %s", company_slug, exc.response.status_code
@@ -40,6 +42,12 @@ class GreenhouseScraper(BaseJobScraper):
 
         data = resp.json()
         raw_jobs: list[dict] = data.get("jobs", [])
+        if len(raw_jobs) >= _LARGE_RESULT_THRESHOLD:
+            logger.warning(
+                "[Greenhouse] %s: %d jobs returned — response may be truncated",
+                company_slug,
+                len(raw_jobs),
+            )
         logger.info("[Greenhouse] %s: %d job(s) fetched", company_slug, len(raw_jobs))
         return [self.parse_job(j, company_slug) for j in raw_jobs]
 
