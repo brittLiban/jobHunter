@@ -24,6 +24,12 @@ const ATTACH_BUTTON_PATTERNS = [
   "resume",
   "resume cv",
   "cv",
+  "choose file",
+  "select file",
+  "add file",
+  "browse",
+  "drop file",
+  "drag and drop",
 ];
 
 const BLOCKED_BUTTON_PATTERNS = [

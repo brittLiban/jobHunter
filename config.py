@@ -24,44 +24,27 @@ GREENHOUSE_BOARD_NAMES: list[str] = [
     # Original targets
     "stripe",
     "figma",
-    # Seattle / PNW - strong entry-level / intern pipelines
+    # Seattle / PNW
     "smartsheet",
-    "rover",
-    "outreach",
-    "convoy",
-    "redfin",
-    "zillow",
-    "docusign",
-    "expedia",
     # Remote-friendly / entry-level friendly tech companies
-    "notion",
     "asana",
     "duolingo",
     "reddit",
     "discord",
     "dropbox",
-    "shopify",
     "squarespace",
-    "hubspot",
-    "zendesk",
     "twitch",
     "airbnb",
     "lyft",
-    "doordash",
-    "zoom",
     "coinbase",
     "robinhood",
     "brex",
     "gusto",
-    "rippling",
     "chime",
-    "plaid",
     "lattice",
     "amplitude",
     "mixpanel",
-    "vanta",
     "verkada",
-    "benchling",
     "okta",
     "pagerduty",
     "datadog",
@@ -71,16 +54,42 @@ GREENHOUSE_BOARD_NAMES: list[str] = [
     "elastic",
     "fastly",
     "newrelic",
-    "atlassian",
     "intercom",
-    "sendgrid",
-    "segment",
-    "figma",
-    "canva",
     "airtable",
-    "coda",
-    "pitch",
-    "linear",
+    # New additions - verified active Greenhouse boards
+    "instacart",
+    "samsara",
+    "toast",
+    "block",
+    "palantir",
+    "nerdwallet",
+    "affirm",
+    "marqeta",
+    "onemedical",
+    "grammarly",
+    "cruise",
+    "wealthfront",
+    "benchsci",
+    "snyk",
+    "netlify",
+    "dbt-labs",
+    "cockroachlabs",
+    "grafana",
+    "hashicorp",
+    "gitlab",
+    "sourcegraph",
+    "postman",
+    "mux",
+    "loom",
+    "notion-hq",
+    "anduril",
+    "scale",
+    "flexport",
+    "rivian",
+    "relativity",
+    "epic",
+    "ramp",
+    "applovin",
 ]
 
 # ── Ashby ATS board slugs ─────────────────────────────────────────────────────
@@ -90,41 +99,50 @@ ASHBY_BOARD_NAMES: list[str] = [
     "vercel",
     "ramp",
     "mercury",
-    "descript",
-    "cal",
     "plain",
     "runway",
-    "rome",
     "supabase",
     "resend",
     "clerk",
-    "prisma",
-    "turso",
-    "trigger",
     "inngest",
     "nango",
     "openai",
-    "anthropic",
     "cohere",
     "mistral",
-    "together",
     "perplexity",
+    # New additions
+    "linear",
+    "notion",
+    "replit",
+    "render",
+    "fly",
+    "planetscale",
+    "convex",
+    "modal",
+    "huggingface",
+    "deepgram",
+    "stability",
+    "weights-and-biases",
+    "anyscale",
+    "pinecone",
 ]
 
 # ── Lever ATS ─────────────────────────────────────────────────────────────────
 # Verify at: https://jobs.lever.co/{slug}
 LEVER_SITE_NAMES: list[str] = [
-    "box",
-    "eventbrite",
-    "yelp",
     "netflix",
     "spotify",
-    "thumbtack",
-    "1password",
-    "hashicorp",
-    "benchling",
-    "gong",
-    "figma",       # some roles appear on lever too
+    # New additions
+    "twilio",
+    "shopify",
+    "atlassian",
+    "cloudflare",
+    "confluent",
+    "sofi",
+    "navan",
+    "braze",
+    "plaid",
+    "notion",
 ]
 
 # ── Workable ──────────────────────────────────────────────────────────────────
@@ -245,6 +263,15 @@ PREFERRED_LOCATIONS: list[str] = [
     "issaquah",
     "everett",
     "lynnwood",
+]
+
+# ── Location prefilter regions ───────────────────────────────────────────────
+# Controls which broad regions pass the coarse location prefilter.
+# Jobs matching ANY of these regions are kept for LLM scoring.
+# Set to ["*"] to disable location prefiltering entirely.
+ALLOWED_LOCATION_REGIONS: list[str] = [
+    "us",           # Anywhere in the United States
+    "remote",       # Remote roles (US-remote, fully remote, etc.)
 ]
 
 DISALLOWED_REMOTE_LOCATION_KEYWORDS: list[str] = [
@@ -433,13 +460,13 @@ AUTO_APPLY_MAX_PER_RUN: int | None = _optional_int_from_env(
 PLAYWRIGHT_HEADLESS: bool = _env_bool("PLAYWRIGHT_HEADLESS", True)
 
 
-OLLAMA_MODEL: str = "llama3.1:8b-instruct-q4_K_M"
+OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_URL: str = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_TIMEOUT: int = int(os.environ.get("OLLAMA_TIMEOUT", "300"))
 MAX_CONCURRENT_LLM: int = 2
 MAX_UNSCORED_JOBS_PER_RUN: int | None = _optional_int_from_env(
     "JOB_HUNTER_MAX_UNSCORED_JOBS_PER_RUN",
-    50,   # score up to 50 jobs per run with local Ollama
+    None,   # score all discovered jobs each run
 )
 
 

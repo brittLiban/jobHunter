@@ -114,22 +114,75 @@ def _is_allowed_remote_location(location: str, prefs: dict) -> bool:
     return not any(keyword in location_lower for keyword in blocked_keywords)
 
 
+_REGION_MARKERS: dict[str, tuple[str, ...]] = {
+    "us": (
+        "united states", "usa", ", us", "u.s.",
+        ", ca", ", ny", ", wa", ", tx", ", il", ", co", ", ma", ", ga", ", or",
+        ", az", ", va", ", nc", ", pa", ", oh", ", mn", ", ut", ", md", ", ct",
+        ", fl", ", mi", ", nj", ", tn", ", mo", ", wi", ", sc", ", al", ", la",
+        ", ky", ", ok", ", ia", ", ar", ", ms", ", ks", ", ne", ", nv", ", nm",
+        ", wv", ", id", ", hi", ", nh", ", me", ", mt", ", ri", ", de", ", sd",
+        ", nd", ", ak", ", vt", ", wy", ", dc",
+        "san francisco", "new york", "los angeles", "chicago", "austin",
+        "denver", "boston", "atlanta", "portland", "seattle", "bellevue",
+        "redmond", "renton", "kent", "tukwila", "kirkland", "tacoma",
+        "anywhere", "multiple locations", "flexible",
+    ),
+    "remote": (
+        "remote", "us-remote", "remote in us", "remote in usa",
+        "work from home", "distributed",
+    ),
+    "canada": ("canada", "toronto", "vancouver", "montreal", "ottawa", "calgary"),
+    "europe": (
+        "europe", "london", "berlin", "amsterdam", "paris", "dublin",
+        "munich", "stockholm", "barcelona", "lisbon", "zurich",
+        "united kingdom", "uk", "germany", "france", "ireland",
+        "netherlands", "spain", "portugal", "sweden", "switzerland",
+    ),
+    "apac": (
+        "singapore", "tokyo", "japan", "sydney", "australia",
+        "india", "bangalore", "bengaluru", "hyderabad",
+    ),
+}
+
+
 def _looks_potentially_location_compatible(location: str, prefs: dict) -> bool:
     """
     Keep jobs whose location text could plausibly satisfy the user's preferences.
 
-    This is only a coarse prefilter to reduce obvious misses before LLM work.
-    Final location gating still happens after extraction.
+    Uses ALLOWED_LOCATION_REGIONS from config to decide which broad regions
+    pass through.  Set to ["*"] to disable prefiltering entirely.
     """
+    allowed_regions = [r.lower() for r in config.ALLOWED_LOCATION_REGIONS]
+
+    # Wildcard disables all filtering
+    if "*" in allowed_regions:
+        return True
+
     if _looks_like_unknown_location(location):
         return True
 
     location_lower = location.lower()
+
+    # Always check preferred locations (city-level matches)
     preferred_lower = [item.lower() for item in prefs.get("preferred_locations", []) if item.strip()]
     if any(item in location_lower for item in preferred_lower if item != "remote"):
         return True
 
-    return _is_allowed_remote_location(location, prefs)
+    # Check each allowed region's markers
+    for region in allowed_regions:
+        markers = _REGION_MARKERS.get(region, ())
+        if markers and any(marker in location_lower for marker in markers):
+            # If the region matches, still block explicitly disallowed keywords
+            blocked = [
+                kw.lower()
+                for kw in prefs.get("disallowed_remote_location_keywords", [])
+                if str(kw).strip()
+            ]
+            if not any(kw in location_lower for kw in blocked):
+                return True
+
+    return False
 
 
 def _prefilter_jobs_by_location(

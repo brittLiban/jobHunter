@@ -26,85 +26,133 @@
         </div>
       </div>
 
-      <!-- Job context bar (shows when applicationId detected) -->
+      <!-- Job context bar -->
       <div id="jobBar" class="job-bar hidden">
         <div class="job-bar-icon">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="2" y="4" width="12" height="10" rx="1.5"/>
             <path stroke-linecap="round" d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/>
           </svg>
         </div>
         <div class="job-bar-info">
-          <span id="jobCompany" class="job-company">—</span>
-          <span id="jobRole" class="job-role">—</span>
+          <span id="jobCompany" class="job-company">&mdash;</span>
+          <span id="jobRole" class="job-role">&mdash;</span>
         </div>
         <span id="jobStatus" class="job-status-pill">prepared</span>
       </div>
 
-      <!-- Config section -->
-      <div class="section">
-        <div class="section-title">Connection</div>
-        <div class="field-group">
-          <div class="field">
-            <label class="field-label">API URL</label>
-            <input id="baseUrl" class="field-input" placeholder="http://localhost:3000" />
+      <!-- Connection section (collapsible when connected) -->
+      <details id="connectionDetails" class="section-details" open>
+        <summary class="section-header">
+          <span class="section-icon">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="5" cy="5" r="3"/><circle cx="11" cy="11" r="3"/>
+              <path stroke-linecap="round" d="M7.5 7.5l1 1"/>
+            </svg>
+          </span>
+          <span class="section-title">Connection</span>
+          <span id="connectionIndicator" class="connection-indicator disconnected"></span>
+        </summary>
+        <div class="section-body">
+          <div class="field-group">
+            <div class="field">
+              <label class="field-label">API URL</label>
+              <input id="baseUrl" class="field-input" placeholder="http://localhost:3000" />
+            </div>
+            <div class="field">
+              <label class="field-label">Token</label>
+              <input id="token" class="field-input" type="password" placeholder="jhx_..." autocomplete="off" />
+            </div>
           </div>
           <div class="field">
-            <label class="field-label">Token</label>
-            <input id="token" class="field-input" type="password" placeholder="jhx_…" autocomplete="off" />
+            <label class="field-label">Application ID <span class="field-hint">(auto-detected from URL)</span></label>
+            <input id="applicationId" class="field-input mono" placeholder="e.g. cmo4x8..." />
+          </div>
+          <div class="connection-actions">
+            <button id="saveBtn" type="button" class="btn btn-sm btn-secondary">Save</button>
+            <button id="testBtn" type="button" class="btn btn-sm btn-secondary">Test Connection</button>
           </div>
         </div>
-        <div class="field">
-          <label class="field-label">Application ID <span class="field-hint">(auto-detected)</span></label>
-          <input id="applicationId" class="field-input" placeholder="cmo…" />
-        </div>
-      </div>
+      </details>
 
-      <!-- Options section -->
-      <div class="section options-row">
+      <!-- Options -->
+      <div class="section options-section">
         <label class="toggle-field">
           <input id="refreshMaterials" type="checkbox" checked />
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="toggle-label">Refresh resume &amp; answers</span>
+          <span class="toggle-label">Refresh resume & answers before filling</span>
         </label>
         <label class="toggle-field">
           <input id="autoSubmit" type="checkbox" />
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="toggle-label">Auto-submit after fill</span>
+          <span class="toggle-label">Auto-submit after fill <span class="caution-tag">caution</span></span>
         </label>
       </div>
 
-      <!-- Progress steps (shown during autofill) -->
+      <!-- Progress steps -->
       <div id="stepsBox" class="steps-box hidden">
         <div class="step" id="step-tailor">
-          <span class="step-icon step-pending">○</span>
-          <span class="step-label">Tailoring resume</span>
+          <span class="step-icon step-pending">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+          </span>
+          <span class="step-label">Tailoring resume & answers</span>
+          <span class="step-status"></span>
         </div>
         <div class="step" id="step-fill">
-          <span class="step-icon step-pending">○</span>
+          <span class="step-icon step-pending">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+          </span>
           <span class="step-label">Filling form fields</span>
+          <span class="step-status"></span>
         </div>
         <div class="step" id="step-submit">
-          <span class="step-icon step-pending">○</span>
+          <span class="step-icon step-pending">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/></svg>
+          </span>
           <span class="step-label">Submitting application</span>
+          <span class="step-status"></span>
         </div>
       </div>
 
-      <!-- Status message -->
+      <!-- Status / result message -->
       <div id="statusBox" class="status-box hidden">
-        <p id="statusMsg" class="status-msg"></p>
+        <div id="statusMsg" class="status-msg"></div>
       </div>
 
-      <!-- Actions -->
+      <!-- Result details (shown after fill) -->
+      <div id="resultBox" class="result-box hidden">
+        <div class="result-grid">
+          <div class="result-item">
+            <span class="result-value" id="resultFilled">0</span>
+            <span class="result-label">Fields filled</span>
+          </div>
+          <div class="result-item">
+            <span class="result-value" id="resultResume">&mdash;</span>
+            <span class="result-label">Resume</span>
+          </div>
+          <div class="result-item">
+            <span class="result-value" id="resultUnresolved">0</span>
+            <span class="result-label">Unresolved</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main action -->
       <div class="actions">
-        <button id="saveBtn" type="button" class="btn btn-secondary">Save</button>
-        <button id="testBtn" type="button" class="btn btn-secondary">Test</button>
-        <button id="fillBtn" type="button" class="btn btn-primary">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <button id="fillBtn" type="button" class="btn btn-primary btn-lg">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 8h10M9 4l4 4-4 4"/>
           </svg>
-          Autofill
+          <span id="fillBtnText">Autofill This Page</span>
         </button>
+      </div>
+
+      <!-- Page detection hint -->
+      <div id="pageHint" class="page-hint hidden">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6"/><path stroke-linecap="round" d="M8 5v3M8 10.5v.5"/>
+        </svg>
+        <span id="pageHintText"></span>
       </div>
 
     </div>
